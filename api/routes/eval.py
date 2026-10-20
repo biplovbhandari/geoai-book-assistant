@@ -368,6 +368,7 @@ def _build_runner(
         api_key=settings.llm_api_key.get_secret_value(),
         model=settings.llm_model,
         timeout=JUDGE_TIMEOUT_SECONDS,
+        reasoning_effort=settings.eval_judge_reasoning_effort,
     )
     return EvalRunner(
         base_url=f"http://localhost:{settings.app_port}",
