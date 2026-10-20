@@ -91,6 +91,8 @@ ollama run qwen3:8b "Hello, what is semantic segmentation?"
 You should get a coherent response.
 Press Ctrl+D to exit.
 
+**Ollama KV cache tuning (optional):** On Apple Silicon, setting `OLLAMA_KV_CACHE_TYPE=q8_0` halves the KV cache memory with negligible quality impact. Set it before starting Ollama: `launchctl setenv OLLAMA_KV_CACHE_TYPE q8_0` then restart the Ollama app.
+
 ### uv (macOS only)
 
 On macOS, the app and indexer run natively (not in Docker) to access the Metal GPU.
@@ -131,6 +133,9 @@ Edit `.env` with deployment settings.
 LLM_MODEL=qwen3:8b
 LLM_BASE_URL=http://localhost:11434/v1
 LLM_API_KEY=ollama
+LLM_TIMEOUT_SECONDS=120
+LLM_REASONING_EFFORT=none
+EVAL_JUDGE_REASONING_EFFORT=none
 DATABASE_URL=postgresql+asyncpg://geoai:geoai@localhost:5432/geoai
 ADMIN_TOKEN=<generate with: python3 -c "import secrets; print(secrets.token_urlsafe(32))">
 EMBEDDING_DIMENSION=1024
@@ -154,6 +159,8 @@ On macOS, `LLM_BASE_URL` and `DATABASE_URL` use `localhost` because the app runs
 LLM_MODEL=qwen3:8b
 LLM_BASE_URL=http://172.17.0.1:11434/v1
 LLM_API_KEY=ollama
+LLM_REASONING_EFFORT=none
+EVAL_JUDGE_REASONING_EFFORT=none
 DATABASE_URL=postgresql+asyncpg://geoai:geoai@postgres:5432/geoai
 ADMIN_TOKEN=<generate with: python3 -c "import secrets; print(secrets.token_urlsafe(32))">
 EMBEDDING_DIMENSION=1024
