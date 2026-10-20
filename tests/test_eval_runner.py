@@ -627,19 +627,20 @@ def test_judge_calls_go_straight_to_the_llm_with_the_right_evidence(eval_file, h
     assert "EXPECTED-" not in with_chunks[0], "faithfulness is judged on the chunks alone"
 
 
-def test_api_error_marks_the_run_failed_and_keeps_earlier_results(eval_file, http, db, runner):
-    """A failing question stops the run as 'failed' while the results already stored stay."""
+def test_api_error_skips_question_and_completes_with_partial_results(eval_file, http, db, runner):
+    """A failing question is retried then skipped; the run completes with partial results."""
     seed_answers(http)
     http.answers["How is ethics applied?"] = FakeResponse(
         {"detail": "generation failed"}, status_code=503
     )
 
-    with pytest.raises(EvalRunnerError, match="generation failed"):
-        asyncio.run(runner.run(eval_file))
+    asyncio.run(runner.run(eval_file))
 
     (run,) = db.rows[EvalRun]
-    assert run.status == "failed"
-    assert [r.question_snapshot for r in db.rows[EvalResult]] == ["What is U-Net?"]
+    assert run.status == "completed"
+    scored_questions = [r.question_snapshot for r in db.rows[EvalResult]]
+    assert "What is U-Net?" in scored_questions
+    assert "How is ethics applied?" not in scored_questions
 
 
 def test_run_fails_before_asking_anything_when_no_deployment_is_active(eval_file, http, db, runner):
