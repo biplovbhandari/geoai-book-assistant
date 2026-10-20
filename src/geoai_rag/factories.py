@@ -198,6 +198,8 @@ def _create_llm_client(config: Settings):
             api_key=config.llm_api_key.get_secret_value(),
             model=config.llm_model,
             timeout=config.llm_timeout_seconds,
+            reasoning_effort=config.llm_reasoning_effort,
+            extra_create_params=config.llm_extra_create_params,
         )
     raise ValueError(f"Unknown llm_provider: {config.llm_provider}")
 

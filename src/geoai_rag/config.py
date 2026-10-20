@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr = SecretStr("")
     llm_model: str = ""
     llm_timeout_seconds: float = Field(default=60.0, ge=1.0, le=300.0)
+    llm_reasoning_effort: str = Field(default="none")
+    llm_extra_create_params: dict = Field(default_factory=dict)
+    eval_judge_reasoning_effort: str = Field(default="none")
 
     book_html_dir: str = "_book"
     book_source_dir: str = "book"

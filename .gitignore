@@ -232,3 +232,4 @@ data/audio.zip
 dev/
 .data/
 backups/
+.python-version
