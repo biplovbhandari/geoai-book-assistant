@@ -6,7 +6,15 @@ from collections.abc import Iterator
 class OpenAICompatibleClient:
     """LLM client using the OpenAI-compatible chat completions API."""
 
-    def __init__(self, base_url: str, api_key: str, model: str, timeout: float = 60.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+        timeout: float = 60.0,
+        reasoning_effort: str = "none",
+        extra_create_params: dict | None = None,
+    ) -> None:
         """Initialize the client with connection parameters.
 
         Args:
@@ -14,11 +22,17 @@ class OpenAICompatibleClient:
             api_key: Authentication key for the API.
             model: Model name to use for completions.
             timeout: Request timeout in seconds.
+            reasoning_effort: Model thinking depth ("none", "low", "medium", "high").
+                "none" disables reasoning; other values are passed as-is to the API.
+            extra_create_params: Additional keyword arguments merged into every
+                chat.completions.create() call (e.g. top_p, frequency_penalty).
         """
         from openai import OpenAI
 
         self._client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
         self._model = model
+        self._reasoning_effort = reasoning_effort
+        self._extra_create_params = extra_create_params or {}
 
     def chat(
         self,
@@ -39,12 +53,16 @@ class OpenAICompatibleClient:
         Raises:
             RuntimeError: If the response has no choices or empty content.
         """
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,  # type: ignore[arg-type]
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        kwargs: dict = {
+            "model": self._model,
+            "messages": messages,  # type: ignore[arg-type]
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            **self._extra_create_params,
+        }
+        if self._reasoning_effort:
+            kwargs["reasoning_effort"] = self._reasoning_effort
+        response = self._client.chat.completions.create(**kwargs)
         if not response.choices:
             raise RuntimeError("LLM returned no choices")
         content = response.choices[0].message.content
@@ -68,13 +86,17 @@ class OpenAICompatibleClient:
         Yields:
             Text chunks as they are produced by the model.
         """
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,  # type: ignore[arg-type]
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
+        kwargs: dict = {
+            "model": self._model,
+            "messages": messages,  # type: ignore[arg-type]
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+            **self._extra_create_params,
+        }
+        if self._reasoning_effort:
+            kwargs["reasoning_effort"] = self._reasoning_effort
+        response = self._client.chat.completions.create(**kwargs)
         for chunk in response:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content

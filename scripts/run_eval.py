@@ -112,6 +112,7 @@ def _build_judge_client(settings: Settings, llm_model: str) -> OpenAICompatibleC
         api_key=settings.llm_api_key.get_secret_value(),
         model=llm_model,
         timeout=JUDGE_TIMEOUT_SECONDS,
+        reasoning_effort=settings.eval_judge_reasoning_effort,
     )
 
 

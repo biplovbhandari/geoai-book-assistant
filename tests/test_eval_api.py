@@ -707,6 +707,7 @@ def test_post_builds_a_runner_that_calls_this_server_and_judges_with_its_llm(
         "api_key": "llm-secret",
         "model": "judge-model",
         "timeout": JUDGE_TIMEOUT_SECONDS,
+        "reasoning_effort": "none",
     }
     assert runner_args == {
         "base_url": "http://localhost:8321",

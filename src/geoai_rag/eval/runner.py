@@ -54,6 +54,8 @@ JUDGE_TEMPERATURE = 0.0
 # How long one judge call may take, for whoever builds the judge client (the CLI and the API).
 # A reasoning model can think for minutes, so this is far above the server's own LLM timeout.
 JUDGE_TIMEOUT_SECONDS = 300.0
+QUESTION_MAX_RETRIES = 2
+QUESTION_RETRY_BASE_DELAY = 5
 
 _CHUNK_SEPARATOR = "\n\n---\n\n"
 
@@ -685,25 +687,81 @@ class EvalRunner:
         questions = started.questions
         print(f"Eval run {run_id}: {name}, {len(questions)} of {total} questions", flush=True)
         results: list[dict[str, Any]] = []
+        failed_count = 0
         try:
             for position, question in enumerate(questions, 1):
-                scored = await self._score_question(question)
-                await self._store_result(run_id, question, scored)
-                results.append(
-                    {
-                        "id": question["id"],
-                        "question": question["question"],
-                        "scores": scored.scores,
-                        "round_trip_ms": scored.answer["round_trip_ms"],
-                    }
-                )
-                _print_progress(position, len(questions), results[-1])
-            await self._set_run_status(run_id, "completed")
+                question_key = question["id"]
+                for attempt in range(QUESTION_MAX_RETRIES + 1):
+                    try:
+                        scored = await self._score_question(question)
+                        await self._store_result(run_id, question, scored)
+                        results.append(
+                            {
+                                "id": question_key,
+                                "question": question["question"],
+                                "scores": scored.scores,
+                                "round_trip_ms": scored.answer["round_trip_ms"],
+                            }
+                        )
+                        _print_progress(position, len(questions), results[-1])
+                        break  # success, move to next question
+                    except (
+                        EvalRunnerError,
+                        RuntimeError,
+                        TimeoutError,
+                        ConnectionError,
+                        OSError,
+                    ) as exc:
+                        if attempt < QUESTION_MAX_RETRIES:
+                            delay = QUESTION_RETRY_BASE_DELAY * (2**attempt)
+                            logger.warning(
+                                "Question %s attempt %d/%d failed, retrying in %ds: %s",
+                                question_key,
+                                attempt + 1,
+                                QUESTION_MAX_RETRIES + 1,
+                                delay,
+                                exc,
+                            )
+                            await asyncio.sleep(delay)
+                        else:
+                            logger.error(
+                                "Question %s failed after %d attempts: %s",
+                                question_key,
+                                QUESTION_MAX_RETRIES + 1,
+                                exc,
+                            )
+                            failed_count += 1
+                            # Do NOT re-raise - continue to next question
+
+            if failed_count == len(questions):
+                await self._set_run_status(run_id, "failed")
+            else:
+                await self._set_run_status(run_id, "completed")
         except BaseException:
             await self._mark_failed(run_id)
             raise
 
-        summary = _summarize(run_id, name, results)
+        if failed_count:
+            logger.warning(
+                "Eval run %d: %d of %d question(s) failed",
+                run_id,
+                failed_count,
+                len(questions),
+            )
+
+        if not results:
+            summary: dict[str, Any] = {
+                "eval_run_id": run_id,
+                "eval_set": name,
+                "status": "failed",
+                "question_count": 0,
+                "averages": {},
+                "results": [],
+            }
+        else:
+            summary = _summarize(run_id, name, results)
+            if failed_count:
+                summary["failed_count"] = failed_count
         _print_summary(summary)
         return summary
 
