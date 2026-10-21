@@ -108,6 +108,14 @@ function countLabel(count, noun) {
     return `${formatCount(count)} ${noun}${count === 1 ? '' : 's'}`;
 }
 
+/** "5 of 15 questions" when planned is known, otherwise "5 questions". */
+function progressLabel(scored, planned) {
+    if (isNumber(planned) && planned > 0) {
+        return `${formatCount(scored)} of ${formatCount(planned)} questions`;
+    }
+    return countLabel(scored, 'question');
+}
+
 /** Upper-cases the first letter, so the status "running" reads "Running". */
 function capitalize(text) {
     return text.charAt(0).toUpperCase() + text.slice(1);
@@ -207,9 +215,14 @@ export function useEval(session, onAuthError) {
             return '';
         }
         const config = isRecord(detail.config) ? detail.config : {};
+        const scored = detail.results.length;
+        const planned = detail.planned_count;
+        const progress = isNumber(planned) && planned > 0
+            ? `${formatCount(scored)} of ${formatCount(planned)} questions scored`
+            : `${countLabel(scored, 'question')} scored`;
         return [
             capitalize(String(detail.status || 'unknown')),
-            `${countLabel(detail.results.length, 'question')} scored`,
+            progress,
             config.retrieval_strategy,
             isNumber(config.retrieval_top_k) ? `k=${config.retrieval_top_k}` : '',
             config.reranker_provider,
@@ -258,21 +271,21 @@ export function useEval(session, onAuthError) {
 
     /**
      * Text for one run in the picker: a symbol for its state, when it started, how it stands, and where
-     * it was started from ("cli" or "api"). A run that is still going says "running" instead of a count
-     * that is out of date. A failed run says how many questions it scored first. The API does not record
-     * how many the run was meant to score, so the label cannot say "of N".
+     * it was started from ("cli" or "api"). A run that is still going shows progress ("3 of 15 questions")
+     * when planned_count is available. A failed run says how many questions it scored first. When
+     * planned_count is null (old runs), only the scored count is shown.
      */
     function runLabel(run) {
         const when = formatDate(run.created_at);
-        const questionCount = countLabel(run.questions_evaluated, 'question');
+        const progress = progressLabel(run.questions_evaluated, run.planned_count);
         const source = run.source ? ` (${run.source})` : '';
         if (isActive(run.status) || run.eval_run_id === runningId.value) {
-            return `${RUN_MARKS.active} ${when} - running${source}`;
+            return `${RUN_MARKS.active} ${when} - ${progress} running${source}`;
         }
         if (run.status === STATUS_FAILED) {
-            return `${RUN_MARKS.failed} ${when} - failed after ${questionCount}${source}`;
+            return `${RUN_MARKS.failed} ${when} - failed after ${progress}${source}`;
         }
-        return `${RUN_MARKS.completed} ${when} - ${questionCount}${source}`;
+        return `${RUN_MARKS.completed} ${when} - ${progress}${source}`;
     }
 
     /** Text for one entry of the eval-set picker. */
@@ -529,6 +542,41 @@ export function useEval(session, onAuthError) {
         }
     }
 
+    // ---- CSV export ----
+
+    /**
+     * Downloads the selected run's results as a CSV file. The export endpoint returns the file directly,
+     * so the response is fetched as a blob and offered as a download. Does nothing when no run is selected.
+     */
+    async function downloadCsv() {
+        var id = selectedRunId.value;
+        if (id === null) {
+            return;
+        }
+        try {
+            var response = await fetch('/eval/runs/' + encodeURIComponent(id) + '/export', {
+                headers: { 'Authorization': 'Bearer ' + session.token },
+            });
+            if (!response.ok) {
+                var text = await response.text().catch(function () { return ''; });
+                errors.detail = 'Export failed (' + (text || response.status) + ').';
+                return;
+            }
+            var blob = await response.blob();
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'eval_run_' + id + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Dashboard: CSV export failed', err);
+            errors.detail = 'Export failed (' + describeError(err) + ').';
+        }
+    }
+
     // ---- Lifecycle ----
 
     /** Clears all data, errors and the run being followed. Called by the shell on disconnect. */
@@ -560,7 +608,7 @@ export function useEval(session, onAuthError) {
         runs, sets, selectedSetName, questions, selectedQuestionIds, selectedRunId, runDetail, runningId,
         errors, busy, rows, metrics, statusLine, statusFailed, messages,
         scoreColumns: SCORE_COLUMNS,
-        fetchAll, fetchRuns, fetchSets, selectRun, startRun,
+        fetchAll, fetchRuns, fetchSets, selectRun, startRun, downloadCsv,
         runLabel, setLabel, isExpanded, toggleExpand,
         reset,
         cleanup,
