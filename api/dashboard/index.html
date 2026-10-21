@@ -170,6 +170,7 @@
                             </select>
                         </label>
                         <button type="button" class="eval-refresh" title="Refresh runs" aria-label="Refresh runs" @click="eval.fetchAll()">&#x21BB;</button>
+                        <button type="button" class="eval-refresh" title="Download CSV" aria-label="Download CSV" @click="eval.downloadCsv()" :disabled="!eval.selectedRunId">&#x2913;</button>
                     </div>
                     <div class="eval-controls">
                         <label class="eval-field" v-if="eval.sets && eval.sets.length">

@@ -9,6 +9,8 @@ takes many minutes.
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +18,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi import Path as PathParam
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -223,6 +226,60 @@ async def get_run(
             )
             for stored, question_key in result.all()
         ],
+    )
+
+
+@router.get(
+    "/runs/{run_id}/export",
+    dependencies=[Depends(require_admin_token), Depends(require_db_session)],
+    responses={404: {"description": "No such eval run or no results"}},
+)
+async def export_run(run_id: _Id, session: DbSession):
+    """Download all results of one eval run as a CSV file."""
+    result = await session.execute(
+        select(EvalResult, EvalQuestion.question_key)
+        .select_from(EvalResult)
+        .outerjoin(EvalQuestion, EvalResult.question_id == EvalQuestion.id)
+        .where(EvalResult.eval_run_id == run_id)
+        .order_by(EvalResult.id)
+    )
+    rows = result.all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No results found for this eval run")
+
+    fieldnames = [
+        "question_key",
+        "question",
+        "expected_answer",
+        "response",
+        "retrieval_precision",
+        "retrieval_recall",
+        "answer_similarity",
+        "faithfulness",
+    ]
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer.writeheader()
+    for stored, question_key in rows:
+        scores = stored.scores or {}
+        writer.writerow(
+            {
+                "question_key": question_key,
+                "question": stored.question_snapshot,
+                "expected_answer": stored.expected_answer_snapshot,
+                "response": stored.response,
+                "retrieval_precision": scores.get("retrieval_precision"),
+                "retrieval_recall": scores.get("retrieval_recall"),
+                "answer_similarity": scores.get("answer_similarity"),
+                "faithfulness": scores.get("faithfulness"),
+            }
+        )
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="eval_run_{run_id}.csv"'},
     )
 
 

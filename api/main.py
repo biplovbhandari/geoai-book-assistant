@@ -113,6 +113,26 @@ async def lifespan(app: FastAPI):
     if app.state.db_session_factory is not None and status == "ready":
         await _sweep_orphaned_api_runs(app.state.db_session_factory)
 
+        # Auto-load eval sets from data/eval/*.yml
+        try:
+            from geoai_rag.eval.runner import load_eval_set, sync_eval_set_to_db
+
+            eval_dir = Path(app.state.settings.eval_data_dir)
+            if eval_dir.is_dir():
+                for yml_path in sorted(eval_dir.glob("*.yml")):
+                    try:
+                        eval_set_data = load_eval_set(yml_path)
+                        await sync_eval_set_to_db(app.state.db_session_factory, eval_set_data)
+                        logger.info(
+                            "Loaded eval set '%s' from %s", eval_set_data["name"], yml_path.name
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to load eval set from %s", yml_path.name, exc_info=True
+                        )
+        except ImportError:
+            logger.debug("pyyaml not installed; skipping eval set auto-load")
+
     try:
         yield
     finally:
