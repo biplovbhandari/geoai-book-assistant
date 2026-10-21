@@ -139,6 +139,77 @@ class StartedRun:
     questions: list[dict[str, Any]]
 
 
+async def sync_eval_set_to_db(
+    session_factory: async_sessionmaker[AsyncSession],
+    eval_set_data: dict[str, Any],
+) -> tuple[int, list[dict[str, Any]]]:
+    """Upsert an eval set and its questions into the database.
+
+    Standalone version of EvalRunner.sync_to_db for use at app startup
+    when no runner is available.
+
+    The eval set is found by name.
+    A question is matched to its row by its YAML id, which is stored as question_key.
+    Rewording a question therefore updates its row and keeps the link to earlier results.
+    A row saved before question_key existed has no key, so it is matched by question text
+    instead and gets its key then.
+    Rows whose question was removed from the YAML are left in place so earlier results keep
+    their link.
+
+    Args:
+        session_factory: Async SQLAlchemy session factory for database writes.
+        eval_set_data: An eval set as returned by load_eval_set.
+
+    Returns:
+        The eval set's database id and every YAML question with its ``db_id`` added.
+    """
+    name = eval_set_data["name"]
+    questions = eval_set_data["questions"]
+    async with session_factory() as session:
+        result = await session.execute(select(EvalSet).where(EvalSet.name == name))
+        eval_set = result.scalar_one_or_none()
+        if eval_set is None:
+            eval_set = EvalSet(name=name, description=eval_set_data["description"])
+            session.add(eval_set)
+            await session.flush()
+        else:
+            eval_set.description = eval_set_data["description"]
+
+        result = await session.execute(
+            select(EvalQuestion)
+            .where(EvalQuestion.eval_set_id == eval_set.id)
+            .order_by(EvalQuestion.id)
+        )
+        by_key: dict[str, EvalQuestion] = {}
+        unkeyed_by_text: dict[str, EvalQuestion] = {}
+        for saved in result.scalars().all():
+            if saved.question_key is None:
+                # Ordered by id, so if a text was saved twice the oldest row is the one reused.
+                unkeyed_by_text.setdefault(saved.question, saved)
+            else:
+                by_key[saved.question_key] = saved
+        rows = []
+        for question in questions:
+            columns = _question_columns(question)
+            row = by_key.get(question["id"])
+            if row is None:
+                row = unkeyed_by_text.pop(question["question"], None)
+            if row is None:
+                row = EvalQuestion(eval_set_id=eval_set.id, **columns)
+                session.add(row)
+            else:
+                for column, value in columns.items():
+                    setattr(row, column, value)
+            rows.append(row)
+        await session.flush()
+        # Read the ids before committing so this works for any session factory, not only
+        # one built with expire_on_commit=False.
+        eval_set_id = eval_set.id
+        synced = [{**q, "db_id": row.id} for q, row in zip(questions, rows, strict=True)]
+        await session.commit()
+    return eval_set_id, synced
+
+
 def load_eval_set(yaml_path: Path) -> dict[str, Any]:
     """Load and validate an eval set YAML file.
 
@@ -471,51 +542,7 @@ class EvalRunner:
         Returns:
             The eval set's database id and every YAML question with its ``db_id`` added.
         """
-        name = eval_set_data["name"]
-        questions = eval_set_data["questions"]
-        async with self._session_factory() as session:
-            result = await session.execute(select(EvalSet).where(EvalSet.name == name))
-            eval_set = result.scalar_one_or_none()
-            if eval_set is None:
-                eval_set = EvalSet(name=name, description=eval_set_data["description"])
-                session.add(eval_set)
-                await session.flush()
-            else:
-                eval_set.description = eval_set_data["description"]
-
-            result = await session.execute(
-                select(EvalQuestion)
-                .where(EvalQuestion.eval_set_id == eval_set.id)
-                .order_by(EvalQuestion.id)
-            )
-            by_key: dict[str, EvalQuestion] = {}
-            unkeyed_by_text: dict[str, EvalQuestion] = {}
-            for saved in result.scalars().all():
-                if saved.question_key is None:
-                    # Ordered by id, so if a text was saved twice the oldest row is the one reused.
-                    unkeyed_by_text.setdefault(saved.question, saved)
-                else:
-                    by_key[saved.question_key] = saved
-            rows = []
-            for question in questions:
-                columns = _question_columns(question)
-                row = by_key.get(question["id"])
-                if row is None:
-                    row = unkeyed_by_text.pop(question["question"], None)
-                if row is None:
-                    row = EvalQuestion(eval_set_id=eval_set.id, **columns)
-                    session.add(row)
-                else:
-                    for column, value in columns.items():
-                        setattr(row, column, value)
-                rows.append(row)
-            await session.flush()
-            # Read the ids before committing so this works for any session factory, not only
-            # one built with expire_on_commit=False.
-            eval_set_id = eval_set.id
-            synced = [{**q, "db_id": row.id} for q, row in zip(questions, rows, strict=True)]
-            await session.commit()
-        return eval_set_id, synced
+        return await sync_eval_set_to_db(self._session_factory, eval_set_data)
 
     def get_config(self) -> dict[str, Any]:
         """Fetch the active pipeline configuration from GET /config."""
@@ -655,7 +682,9 @@ class EvalRunner:
         eval_set_id, synced = await self.sync_to_db(eval_set_data)
         db_ids = {question["id"]: question["db_id"] for question in synced}
         config = await asyncio.to_thread(self.get_config)
-        run_id = await self._create_run_row(eval_set_id, config, source=source)
+        run_id = await self._create_run_row(
+            eval_set_id, config, source=source, planned_count=len(selected)
+        )
         return StartedRun(
             run_id=run_id,
             eval_set_name=eval_set_data["name"],
@@ -766,9 +795,19 @@ class EvalRunner:
         return summary
 
     async def _create_run_row(
-        self, eval_set_id: int, config: dict[str, Any], source: str = "cli"
+        self,
+        eval_set_id: int,
+        config: dict[str, Any],
+        source: str = "cli",
+        planned_count: int | None = None,
     ) -> int:
         """Create the eval_runs row for the active deployment, with status 'running'.
+
+        Args:
+            eval_set_id: The eval set's database id.
+            config: The pipeline configuration snapshot for this run.
+            source: Where the run was triggered from ('cli' or 'api').
+            planned_count: Number of questions this run will evaluate, if known.
 
         Raises:
             EvalRunnerError: If no deployment is active.
@@ -789,6 +828,7 @@ class EvalRunner:
                 status="running",
                 source=source,
                 config=config,
+                planned_count=planned_count,
             )
             session.add(run)
             await session.flush()

@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     llm_reasoning_effort: str = Field(default="none")
     llm_extra_create_params: dict = Field(default_factory=dict)
     eval_judge_reasoning_effort: str = Field(default="none")
+    eval_data_dir: str = "data/eval"
 
     book_html_dir: str = "_book"
     book_source_dir: str = "book"

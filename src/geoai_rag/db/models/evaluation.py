@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Any
 
+import sqlalchemy as sa
 from sqlalchemy import CheckConstraint, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -76,6 +77,7 @@ class EvalRun(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Text, default="cli")
     config: Mapped[Any] = mapped_column(JSONB, nullable=True)
+    planned_count: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
 
     eval_set: Mapped["EvalSet"] = relationship(back_populates="runs")
     deployment: Mapped["Deployment"] = relationship(back_populates="eval_runs")

@@ -43,7 +43,7 @@ from geoai_rag.generation.llm_client import OpenAICompatibleClient
 
 logger = logging.getLogger(__name__)
 
-EVAL_DIR = Path(__file__).resolve().parent.parent / "data" / "eval"
+EVAL_DIR = Path(get_settings().eval_data_dir)
 
 
 def _build_parser() -> argparse.ArgumentParser:
