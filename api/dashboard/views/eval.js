@@ -116,6 +116,13 @@ function progressLabel(scored, planned) {
     return countLabel(scored, 'question');
 }
 
+/** True when a running eval has not sent a heartbeat within the stale threshold. */
+function isStale(run, staleThresholdMs) {
+    if (run.status !== 'running' || !run.last_heartbeat_at) return false;
+    var age = Date.now() - new Date(run.last_heartbeat_at).getTime();
+    return age > staleThresholdMs;
+}
+
 /** Upper-cases the first letter, so the status "running" reads "Running". */
 function capitalize(text) {
     return text.charAt(0).toUpperCase() + text.slice(1);
@@ -156,7 +163,7 @@ function toRow(result, index) {
  */
 export function useEval(session, onAuthError) {
     // Read the global here instead of at module level, for the reason given in useAnalytics.
-    const { ref, reactive, computed, watch } = Vue;
+    const { ref, reactive, computed, watch, nextTick } = Vue;
 
     const runs = ref(null);
     const sets = ref(null);
@@ -182,6 +189,8 @@ export function useEval(session, onAuthError) {
     // Rows the user has opened, by question key. Keys rather than positions keep a row open while the
     // table refreshes during a run.
     const expandedKeys = reactive(new Set());
+    var regressions = ref([]);
+    var staleThresholdMs = ref(10 * 60 * 1000);
 
     // Plain variable on purpose: the template never reads it.
     let pollTimer = null;
@@ -232,6 +241,17 @@ export function useEval(session, onAuthError) {
 
     const statusFailed = computed(() => Boolean(runDetail.value) && runDetail.value.status === STATUS_FAILED);
 
+    /** The full run object for the currently selected run id. */
+    var selectedRun = computed(function() {
+        if (!selectedRunId.value || !runs.value) return null;
+        return runs.value.find(function(r) { return r.eval_run_id === selectedRunId.value; }) || null;
+    });
+
+    /** True when there are at least two completed runs, so sparklines have enough data points. */
+    var sparklineVisible = computed(function() {
+        return (runs.value || []).filter(function(r) { return r.status === 'completed'; }).length >= 2;
+    });
+
     /** Text for a list with nothing to show: its load error, "Loading...", or an empty-state note. */
     function listMessage(key, data, emptyText) {
         if (errors[key]) {
@@ -277,15 +297,20 @@ export function useEval(session, onAuthError) {
      */
     function runLabel(run) {
         const when = formatDate(run.created_at);
+        const id = '#' + run.eval_run_id;
         const progress = progressLabel(run.questions_evaluated, run.planned_count);
         const source = run.source ? ` (${run.source})` : '';
         if (isActive(run.status) || run.eval_run_id === runningId.value) {
-            return `${RUN_MARKS.active} ${when} - ${progress} running${source}`;
+            var staleTag = isStale(run, staleThresholdMs.value) ? ' (stale)' : '';
+            return `${RUN_MARKS.active} ${when} ${id} - ${progress} running${staleTag}${source}`;
+        }
+        if (run.status === 'cancelled') {
+            return `${RUN_MARKS.failed} ${when} ${id} - cancelled after ${progress}${source}`;
         }
         if (run.status === STATUS_FAILED) {
-            return `${RUN_MARKS.failed} ${when} - failed after ${progress}${source}`;
+            return `${RUN_MARKS.failed} ${when} ${id} - failed after ${progress}${source}`;
         }
-        return `${RUN_MARKS.completed} ${when} - ${progress}${source}`;
+        return `${RUN_MARKS.completed} ${when} ${id} - ${progress}${source}`;
     }
 
     /** Text for one entry of the eval-set picker. */
@@ -395,6 +420,7 @@ export function useEval(session, onAuthError) {
         if (selectedRunId.value === null && runs.value.length > 0) {
             selectRun(runs.value[0].eval_run_id);
         }
+        nextTick(renderSparklines);
     }
 
     /** Loads one run's results into `runDetail`, unless another run has been selected since. */
@@ -439,8 +465,17 @@ export function useEval(session, onAuthError) {
     });
 
     /** Loads the sets and the runs in parallel; one failing request does not stop the other. */
+    async function fetchStaleThreshold() {
+        try {
+            var config = await apiGet('/config', session.token, isRecord);
+            if (config && isNumber(config.eval_stale_threshold_minutes)) {
+                staleThresholdMs.value = config.eval_stale_threshold_minutes * 60 * 1000;
+            }
+        } catch (_e) { /* non-critical, keep default */ }
+    }
+
     function fetchAll() {
-        return Promise.allSettled([fetchSets(), fetchRuns()]);
+        return Promise.allSettled([fetchSets(), fetchRuns(), fetchStaleThreshold()]);
     }
 
     // ---- Starting a run and following it ----
@@ -577,11 +612,136 @@ export function useEval(session, onAuthError) {
         }
     }
 
+    // ---- Resume and cancel ----
+
+    /**
+     * Resumes a failed or cancelled run by posting its id to the start endpoint. The server creates a
+     * new run that picks up where the original left off. Follows the same busy-guard and polling pattern
+     * as startRun.
+     */
+    async function resumeRun() {
+        var id = selectedRunId.value;
+        if (id === null || busy.value) return;
+        starting.value = true;
+        errors.run = '';
+        try {
+            var started = await call(
+                'run',
+                'Could not resume the run',
+                function() { return apiPost('/eval/runs', session.token, { resume_run_id: id }, isRunStarted); }
+            );
+            if (started === undefined) return;
+            if (isActive(started.status)) {
+                runningId.value = started.eval_run_id;
+            }
+            selectRun(started.eval_run_id);
+            await fetchRuns();
+        } finally {
+            starting.value = false;
+        }
+    }
+
+    /** Cancels a running or pending run. The server marks it as cancelled and stops processing. */
+    async function cancelRun() {
+        var id = selectedRunId.value;
+        if (id === null) return;
+        var result = await call(
+            'run',
+            'Could not cancel the run',
+            function() { return apiPost('/eval/runs/' + encodeURIComponent(id) + '/cancel', session.token, {}, isRecord); }
+        );
+        if (result !== undefined) {
+            await fetchRuns();
+        }
+    }
+
+    // ---- Sparklines ----
+
+    /**
+     * Compares the two most recent completed runs and returns an array of metrics where the latest run
+     * dropped by more than 0.1. Each entry has { metric, drop } for display in the regression banner.
+     */
+    function checkRegression(completedRuns) {
+        if (completedRuns.length < 2) return [];
+        var latest = completedRuns[completedRuns.length - 1];
+        var previous = completedRuns[completedRuns.length - 2];
+        var drops = [];
+        var metricKeys = ['avg_retrieval_precision', 'avg_retrieval_recall', 'avg_answer_similarity', 'avg_faithfulness'];
+        metricKeys.forEach(function(m) {
+            var drop = (previous[m] || 0) - (latest[m] || 0);
+            if (drop > 0.1) {
+                drops.push({ metric: m.replace('avg_', ''), drop: drop.toFixed(2) });
+            }
+        });
+        return drops;
+    }
+
+    /**
+     * Draws four small Chart.js line charts showing how each score metric trends across completed runs.
+     * Each chart is a minimal sparkline: no axis labels, no legend, just the line and its tooltips.
+     * Also updates the regression warning state.
+     */
+    function renderSparklines() {
+        var completedRuns = (runs.value || [])
+            .filter(function(r) { return r.status === 'completed'; })
+            .sort(function(a, b) { return new Date(a.created_at) - new Date(b.created_at); });
+
+        regressions.value = checkRegression(completedRuns);
+
+        if (completedRuns.length < 2) return;
+
+        var metricKeys = ['avg_retrieval_precision', 'avg_retrieval_recall', 'avg_answer_similarity', 'avg_faithfulness'];
+
+        metricKeys.forEach(function(metric, i) {
+            var canvas = document.getElementById('sparkline-' + i);
+            if (!canvas) return;
+
+            canvas.style.height = '56px';
+            canvas.style.maxHeight = '56px';
+
+            var data = completedRuns.map(function(r) { return r[metric] || 0; });
+
+            if (canvas._chart) canvas._chart.destroy();
+
+            canvas._chart = new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: completedRuns.map(function(r) { return '#' + r.eval_run_id; }),
+                    datasets: [{
+                        data: data,
+                        borderColor: '#2563eb',
+                        borderWidth: 1.5,
+                        pointRadius: 2,
+                        fill: false,
+                        tension: 0.3,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: { enabled: true } },
+                    scales: {
+                        x: { display: false },
+                        y: { display: false, min: 0, max: 1 }
+                    }
+                }
+            });
+        });
+    }
+
     // ---- Lifecycle ----
 
     /** Clears all data, errors and the run being followed. Called by the shell on disconnect. */
     function reset() {
         stopPolling();
+        for (var i = 0; i < 4; i++) {
+            var canvas = document.getElementById('sparkline-' + i);
+            if (canvas && canvas._chart) {
+                canvas._chart.destroy();
+                canvas._chart = null;
+            }
+        }
+        regressions.value = [];
         runs.value = null;
         sets.value = null;
         selectedSetName.value = '';
@@ -606,9 +766,10 @@ export function useEval(session, onAuthError) {
 
     return {
         runs, sets, selectedSetName, questions, selectedQuestionIds, selectedRunId, runDetail, runningId,
+        selectedRun, sparklineVisible, regressions,
         errors, busy, rows, metrics, statusLine, statusFailed, messages,
         scoreColumns: SCORE_COLUMNS,
-        fetchAll, fetchRuns, fetchSets, selectRun, startRun, downloadCsv,
+        fetchAll, fetchRuns, fetchSets, selectRun, startRun, downloadCsv, resumeRun, cancelRun,
         runLabel, setLabel, isExpanded, toggleExpand,
         reset,
         cleanup,

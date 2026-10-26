@@ -171,6 +171,8 @@
                         </label>
                         <button type="button" class="eval-refresh" title="Refresh runs" aria-label="Refresh runs" @click="eval.fetchAll()">&#x21BB;</button>
                         <button type="button" class="eval-refresh" title="Download CSV" aria-label="Download CSV" @click="eval.downloadCsv()" :disabled="!eval.selectedRunId">&#x2913;</button>
+                        <button type="button" class="eval-refresh" title="Resume run" aria-label="Resume run" @click="eval.resumeRun()" v-if="eval.selectedRun && (eval.selectedRun.status === 'failed' || eval.selectedRun.status === 'cancelled')">&#x25B6;</button>
+                        <button type="button" class="eval-refresh" title="Cancel run" aria-label="Cancel run" @click="eval.cancelRun()" v-if="eval.selectedRun && (eval.selectedRun.status === 'running' || eval.selectedRun.status === 'pending')">&#x2716;</button>
                     </div>
                     <div class="eval-controls">
                         <label class="eval-field" v-if="eval.sets && eval.sets.length">
@@ -203,6 +205,19 @@
                     <div class="metric" v-for="m in eval.metrics" :key="m.label">
                         <div class="metric-val">{{ m.value }}</div>
                         <div class="metric-lbl">{{ m.label }}</div>
+                    </div>
+                </div>
+
+                <div class="eval-sparklines" v-if="eval.sparklineVisible">
+                    <h3>Score Trends</h3>
+                    <div class="sparkline-grid">
+                        <div class="sparkline-item" v-for="(label, i) in ['Precision', 'Recall', 'Similarity', 'Faithfulness']" :key="i">
+                            <span class="sparkline-label">{{ label }}</span>
+                            <canvas :id="'sparkline-' + i" height="40"></canvas>
+                        </div>
+                    </div>
+                    <div class="eval-regression-warning" v-if="eval.regressions && eval.regressions.length">
+                        &#x26A0; Score regression: <span v-for="r in eval.regressions" :key="r.metric">{{ r.metric }} dropped {{ r.drop }} </span>
                     </div>
                 </div>
 
