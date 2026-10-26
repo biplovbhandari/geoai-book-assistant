@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.datastructures import State
 
 from api.dependencies import DbSession, require_admin_token, require_db_session
-from geoai_rag.config import Settings
+from geoai_rag.config import Settings, get_settings
 from geoai_rag.db.models import EvalQuestion, EvalResult, EvalRun, EvalSet, VEvalRunSummary
 from geoai_rag.eval.runner import (
     JUDGE_TIMEOUT_SECONDS,
@@ -39,8 +39,11 @@ from geoai_rag.generation.llm_client import OpenAICompatibleClient
 
 logger = logging.getLogger(__name__)
 
-# The eval set YAML files live in the repository, which the Docker image does not copy.
-EVAL_SET_DIR = Path(__file__).resolve().parents[2] / "data" / "eval"
+
+def _eval_set_dir() -> Path:
+    """Return the eval set directory from settings. Testable via monkeypatch."""
+    return Path(get_settings().eval_data_dir)
+
 
 # The largest value of a Postgres integer column. A bigger id in the URL could only fail inside
 # the database, as a 500, so it is rejected as invalid instead.
@@ -69,6 +72,8 @@ class EvalRunSummary(BaseModel):
     status: str
     source: str
     created_at: datetime
+    planned_count: int | None
+    last_heartbeat_at: datetime | None
     deployment_label: str | None
     questions_evaluated: int
     avg_retrieval_precision: float | None
@@ -152,6 +157,8 @@ class StartRunRequest(BaseModel):
     Every id in question_ids must exist in the eval set, or no run starts.
     To run every question, leave question_ids out; an empty list is rejected.
     Unknown fields are rejected so that a misspelled name cannot silently run the default set.
+    resume_run_id resumes a failed or cancelled run instead of starting a new one.
+    When set, eval_set_name, tags, and question_ids are ignored.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -163,13 +170,14 @@ class StartRunRequest(BaseModel):
     question_ids: list[Annotated[str, Field(min_length=1, max_length=100)]] | None = Field(
         default=None, min_length=1
     )
+    resume_run_id: int | None = Field(default=None, ge=1, le=_MAX_ID)
 
 
 class StartRunResponse(BaseModel):
     """The run that was started; poll GET /eval/runs/{eval_run_id} for its progress."""
 
     eval_run_id: int
-    status: Literal["running"]
+    status: Literal["running", "completed"]
 
 
 @router.get("/runs", response_model=list[EvalRunSummary])
@@ -356,7 +364,21 @@ async def start_eval_run(
     if not _claim_run_slot(state):
         raise HTTPException(status_code=409, detail="An eval run is already in progress")
     try:
-        runner, started = await _start_or_raise(state.settings, state.db_session_factory, options)
+        if options.resume_run_id is not None:
+            runner, started = await _resume_or_raise(
+                state.settings, state.db_session_factory, options.resume_run_id
+            )
+            if not started.questions:
+                _release_run_slot(state)
+                logger.info(
+                    "Resume run %d: all questions already scored, marked completed",
+                    started.run_id,
+                )
+                return StartRunResponse(eval_run_id=started.run_id, status="completed")
+        else:
+            runner, started = await _start_or_raise(
+                state.settings, state.db_session_factory, options
+            )
     except BaseException:
         _release_run_slot(state)
         raise
@@ -399,7 +421,8 @@ def _find_eval_set_file(name: str | None) -> Path | None:
     Raises:
         ValueError: If a file read on the way is not a valid eval set.
     """
-    files = sorted([*EVAL_SET_DIR.glob("*.yml"), *EVAL_SET_DIR.glob("*.yaml")])
+    eval_dir = _eval_set_dir()
+    files = sorted([*eval_dir.glob("*.yml"), *eval_dir.glob("*.yaml")])
     if name is None:
         return files[0] if files else None
     return next((path for path in files if load_eval_set(path)["name"] == name), None)
@@ -428,7 +451,7 @@ def _build_runner(
         reasoning_effort=settings.eval_judge_reasoning_effort,
     )
     return EvalRunner(
-        base_url=f"http://localhost:{settings.app_port}",
+        base_url=settings.local_api_url,
         llm_client=judge,
         session_factory=session_factory,
         admin_token=settings.admin_token.get_secret_value(),
@@ -468,6 +491,28 @@ async def _start_or_raise(
     return runner, started
 
 
+async def _resume_or_raise(
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: int,
+) -> tuple[EvalRunner, StartedRun]:
+    """Resume a failed or cancelled eval run, turning expected failures into HTTP errors.
+
+    Raises:
+        HTTPException: 404 when the run does not exist, 409 when its status does not
+            allow resuming, and 503 when the runner's own preconditions fail.
+    """
+    try:
+        runner = _build_runner(settings, session_factory)
+        started = await runner.resume_run(run_id)
+    except EvalRunnerError as exc:
+        detail = str(exc)
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail) from exc
+        raise HTTPException(status_code=409, detail=detail) from exc
+    return runner, started
+
+
 async def _execute_in_background(state: State, runner: EvalRunner, started: StartedRun) -> None:
     """Score a started run's questions, then free the run slot. Never raises.
 
@@ -481,3 +526,28 @@ async def _execute_in_background(state: State, runner: EvalRunner, started: Star
         logger.exception("Eval run %d failed", started.run_id)
     finally:
         _release_run_slot(state)
+
+
+@router.post(
+    "/runs/{run_id}/cancel",
+    dependencies=[Depends(require_admin_token)],
+    status_code=200,
+    responses={
+        404: {"description": "No such eval run"},
+        409: {"description": "Run is not active"},
+    },
+)
+async def cancel_run(run_id: _Id, session: DbSession):
+    """Cancel a running or pending eval run.
+
+    Sets the run status to cancelled.
+    The background task checks the status between questions and will stop.
+    """
+    run = await session.get(EvalRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Eval run not found")
+    if run.status not in ("running", "pending"):
+        raise HTTPException(status_code=409, detail="Run is not active")
+    run.status = "cancelled"
+    await session.commit()
+    return {"status": "cancelled", "run_id": run_id}
