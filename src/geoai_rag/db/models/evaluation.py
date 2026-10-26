@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
@@ -58,7 +59,7 @@ class EvalRun(TimestampMixin, Base):
     __tablename__ = "eval_runs"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'running', 'completed', 'failed')",
+            "status IN ('pending', 'running', 'completed', 'failed', 'cancelled')",
             name="status_valid",
         ),
         CheckConstraint(
@@ -78,6 +79,10 @@ class EvalRun(TimestampMixin, Base):
     source: Mapped[str] = mapped_column(Text, default="cli")
     config: Mapped[Any] = mapped_column(JSONB, nullable=True)
     planned_count: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    planned_question_ids: Mapped[list[int] | None] = mapped_column(JSONB, nullable=True)
 
     eval_set: Mapped["EvalSet"] = relationship(back_populates="runs")
     deployment: Mapped["Deployment"] = relationship(back_populates="eval_runs")
