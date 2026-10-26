@@ -77,6 +77,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show which questions would run, without calling the API, the judge, or the database.",
     )
+    parser.add_argument(
+        "--resume",
+        type=int,
+        metavar="RUN_ID",
+        help="Resume a failed or cancelled eval run by its ID.",
+    )
     return parser
 
 
@@ -199,21 +205,61 @@ async def _run_all(
     return 0
 
 
+async def _resume_run(
+    args: argparse.Namespace,
+    settings: Settings,
+    judge_client: OpenAICompatibleClient,
+) -> int:
+    """Resume a failed or cancelled eval run by its ID."""
+    engine = create_db_engine(settings.database_url.get_secret_value())
+    try:
+        runner = EvalRunner(
+            base_url=args.base_url,
+            llm_client=judge_client,
+            session_factory=create_session_factory(engine),
+            admin_token=settings.admin_token.get_secret_value(),
+        )
+        started = await runner.resume_run(args.resume)
+        if not started.questions:
+            print(f"Run {started.run_id}: all questions already scored, marked completed")
+        else:
+            print(
+                f"Resuming run {started.run_id}: {started.eval_set_name}, "
+                f"{len(started.questions)} of {started.set_size} question(s) remaining"
+            )
+            result = await runner.execute_run(started)
+            print(f"Run {started.run_id} {result['status']}")
+    finally:
+        await engine.dispose()
+    return 0
+
+
 def main() -> int:
     """Run the requested eval sets and return the process exit code."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     # The judge client sends its requests through httpx, which logs one INFO line per request and
     # would bury the per-question progress lines.
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    args = _build_parser().parse_args()
+    parser = _build_parser()
+    args = parser.parse_args()
+    if args.resume is not None and any([args.eval_set, args.tags, args.question, args.dry_run]):
+        parser.error("--resume cannot be used with --eval-set, --tags, --question, or --dry-run")
     try:
+        if args.resume is not None:
+            settings = get_settings()
+            _require_settings(settings)
+            if not args.base_url:
+                args.base_url = settings.local_api_url
+            llm_model = _server_llm_model(args.base_url, settings.admin_token.get_secret_value())
+            judge_client = _build_judge_client(settings, llm_model)
+            return asyncio.run(_resume_run(args, settings, judge_client))
         files = _eval_files(args.eval_set)
         if args.dry_run:
             return _dry_run(files, args)
         settings = get_settings()
         _require_settings(settings)
         if not args.base_url:
-            args.base_url = f"http://localhost:{settings.app_port}"
+            args.base_url = settings.local_api_url
         llm_model = _server_llm_model(args.base_url, settings.admin_token.get_secret_value())
         judge_client = _build_judge_client(settings, llm_model)
         return asyncio.run(_run_all(files, args, settings, judge_client))
@@ -221,7 +267,11 @@ def main() -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print("Interrupted. An unfinished eval run is marked failed.", file=sys.stderr)
+        print(
+            "Interrupted. An unfinished eval run is marked cancelled.\n"
+            "Resume with: uv run python scripts/run_eval.py --resume <run_id>",
+            file=sys.stderr,
+        )
         return 130
 
 

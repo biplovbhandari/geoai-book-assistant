@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     llm_extra_create_params: dict = Field(default_factory=dict)
     eval_judge_reasoning_effort: str = Field(default="none")
     eval_data_dir: str = "data/eval"
+    eval_stale_threshold_minutes: int = Field(default=10, ge=1, le=1440)
 
     book_html_dir: str = "_book"
     book_source_dir: str = "book"
@@ -51,6 +52,11 @@ class Settings(BaseSettings):
 
     app_port: int = Field(default=8000, ge=1, le=65535)
     app_env: str = "development"
+
+    @property
+    def local_api_url(self) -> str:
+        """Base URL for loopback API calls (eval runner, scripts)."""
+        return f"http://localhost:{self.app_port}"
 
 
 @lru_cache

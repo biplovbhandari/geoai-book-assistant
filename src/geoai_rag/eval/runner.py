@@ -27,7 +27,7 @@ from pydantic import (
     ValidationError,
     model_validator,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -682,14 +682,84 @@ class EvalRunner:
         eval_set_id, synced = await self.sync_to_db(eval_set_data)
         db_ids = {question["id"]: question["db_id"] for question in synced}
         config = await asyncio.to_thread(self.get_config)
+        planned_ids = [db_ids[item["id"]] for item in selected]
         run_id = await self._create_run_row(
-            eval_set_id, config, source=source, planned_count=len(selected)
+            eval_set_id,
+            config,
+            source=source,
+            planned_count=len(selected),
+            planned_question_ids=planned_ids,
         )
         return StartedRun(
             run_id=run_id,
             eval_set_name=eval_set_data["name"],
             set_size=len(eval_set_data["questions"]),
             questions=[{**item, "db_id": db_ids[item["id"]]} for item in selected],
+        )
+
+    async def resume_run(self, run_id: int) -> StartedRun:
+        """Resume a failed or cancelled eval run, scoring only the unscored questions."""
+        async with self._session_factory() as session:
+            run_row = await session.get(EvalRun, run_id)
+            if run_row is None:
+                raise EvalRunnerError(f"Eval run {run_id} not found")
+            if run_row.status in ("running", "pending"):
+                raise EvalRunnerError(f"Run {run_id} is still {run_row.status}; cannot resume")
+
+            planned_ids = run_row.planned_question_ids
+            if planned_ids is not None:
+                result = await session.execute(
+                    select(EvalQuestion)
+                    .where(EvalQuestion.id.in_(planned_ids))
+                    .order_by(EvalQuestion.id)
+                )
+            else:
+                result = await session.execute(
+                    select(EvalQuestion)
+                    .where(EvalQuestion.eval_set_id == run_row.eval_set_id)
+                    .order_by(EvalQuestion.id)
+                )
+            all_questions = result.scalars().all()
+
+            result = await session.execute(
+                select(EvalResult.question_id).where(EvalResult.eval_run_id == run_id)
+            )
+            scored_ids = {row[0] for row in result.all()}
+
+            unscored = [
+                {
+                    "id": q.question_key or str(q.id),
+                    "question": q.question,
+                    "expected_answer": q.expected_answer,
+                    "expected_sources": q.expected_sources,
+                    "tags": q.tags or [],
+                    "db_id": q.id,
+                }
+                for q in all_questions
+                if q.id not in scored_ids
+            ]
+
+            eval_set = await session.get(EvalSet, run_row.eval_set_id)
+            eval_set_name = eval_set.name if eval_set else "unknown"
+
+            if not unscored:
+                run_row.status = "completed"
+                await session.commit()
+                return StartedRun(
+                    run_id=run_id,
+                    eval_set_name=eval_set_name,
+                    set_size=len(all_questions),
+                    questions=[],
+                )
+
+            run_row.status = "running"
+            await session.commit()
+
+        return StartedRun(
+            run_id=run_id,
+            eval_set_name=eval_set_name,
+            set_size=len(all_questions),
+            questions=unscored,
         )
 
     async def execute_run(self, started: StartedRun) -> dict[str, Any]:
@@ -717,13 +787,29 @@ class EvalRunner:
         print(f"Eval run {run_id}: {name}, {len(questions)} of {total} questions", flush=True)
         results: list[dict[str, Any]] = []
         failed_count = 0
+        cancelled = False
         try:
             for position, question in enumerate(questions, 1):
+                # Before scoring each question, check for cancellation
+                async with self._session_factory() as session:
+                    run_row = await session.get(EvalRun, run_id)
+                    if run_row and run_row.status == "cancelled":
+                        logger.info("Eval run %d cancelled by user", run_id)
+                        cancelled = True
+                        break
+
                 question_key = question["id"]
                 for attempt in range(QUESTION_MAX_RETRIES + 1):
                     try:
                         scored = await self._score_question(question)
                         await self._store_result(run_id, question, scored)
+                        async with self._session_factory() as session:
+                            await session.execute(
+                                update(EvalRun)
+                                .where(EvalRun.id == run_id)
+                                .values(last_heartbeat_at=func.now())
+                            )
+                            await session.commit()
                         results.append(
                             {
                                 "id": question_key,
@@ -762,10 +848,26 @@ class EvalRunner:
                             failed_count += 1
                             # Do NOT re-raise - continue to next question
 
-            if failed_count == len(questions):
+            # Re-check after the loop: cancel may have arrived during the last question
+            if not cancelled:
+                async with self._session_factory() as session:
+                    run_row = await session.get(EvalRun, run_id)
+                    if run_row and run_row.status == "cancelled":
+                        logger.info("Eval run %d cancelled by user", run_id)
+                        cancelled = True
+
+            if cancelled:
+                await self._set_run_status(run_id, "cancelled")
+            elif failed_count == len(questions):
                 await self._set_run_status(run_id, "failed")
             else:
                 await self._set_run_status(run_id, "completed")
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            try:
+                await self._set_run_status(run_id, "cancelled")
+            except (KeyboardInterrupt, asyncio.CancelledError, Exception):
+                logger.debug("Could not set cancelled status for run %d", run_id, exc_info=True)
+            raise
         except BaseException:
             await self._mark_failed(run_id)
             raise
@@ -789,6 +891,8 @@ class EvalRunner:
             }
         else:
             summary = _summarize(run_id, name, results)
+            if cancelled:
+                summary["status"] = "cancelled"
             if failed_count:
                 summary["failed_count"] = failed_count
         _print_summary(summary)
@@ -800,6 +904,7 @@ class EvalRunner:
         config: dict[str, Any],
         source: str = "cli",
         planned_count: int | None = None,
+        planned_question_ids: list[int] | None = None,
     ) -> int:
         """Create the eval_runs row for the active deployment, with status 'running'.
 
@@ -808,6 +913,7 @@ class EvalRunner:
             config: The pipeline configuration snapshot for this run.
             source: Where the run was triggered from ('cli' or 'api').
             planned_count: Number of questions this run will evaluate, if known.
+            planned_question_ids: DB ids of the questions this run will evaluate.
 
         Raises:
             EvalRunnerError: If no deployment is active.
@@ -829,6 +935,7 @@ class EvalRunner:
                 source=source,
                 config=config,
                 planned_count=planned_count,
+                planned_question_ids=planned_question_ids,
             )
             session.add(run)
             await session.flush()

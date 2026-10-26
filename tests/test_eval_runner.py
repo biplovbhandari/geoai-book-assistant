@@ -224,9 +224,11 @@ class FakeSession:
         self._pending.clear()
 
     async def execute(self, statement: Any) -> FakeResult:
-        """Return every stored row of the ORM class that the SELECT reads."""
-        entity = statement.column_descriptions[0]["entity"]
-        return FakeResult(list(self._db.rows[entity]))
+        """Handle SELECT (return rows) and UPDATE/INSERT (no-op in fake)."""
+        if hasattr(statement, "column_descriptions"):
+            entity = statement.column_descriptions[0]["entity"]
+            return FakeResult(list(self._db.rows[entity]))
+        return FakeResult([])
 
     async def get(self, entity: type, ident: int) -> Any:
         """Return the stored row with this primary key, or None."""

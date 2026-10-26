@@ -200,7 +200,7 @@ def runner(monkeypatch) -> FakeRunner:
 @pytest.fixture
 def eval_dir(monkeypatch, tmp_path) -> Path:
     """An empty directory that stands in for data/eval during the test."""
-    monkeypatch.setattr(eval_routes, "EVAL_SET_DIR", tmp_path)
+    monkeypatch.setattr(eval_routes, "_eval_set_dir", lambda: tmp_path)
     return tmp_path
 
 
@@ -286,6 +286,8 @@ def test_runs_returns_summaries_newest_first(client, session):
         "deployment_id": 3,
         "status": "completed",
         "source": "cli",
+        "planned_count": None,
+        "last_heartbeat_at": None,
         "deployment_label": "v1",
         "questions_evaluated": 15,
         "avg_retrieval_precision": 0.45,
@@ -299,6 +301,8 @@ def test_runs_returns_summaries_newest_first(client, session):
         "deployment_id": 3,
         "status": "running",
         "source": "api",
+        "planned_count": None,
+        "last_heartbeat_at": None,
         "deployment_label": None,
         "questions_evaluated": 0,
         "avg_retrieval_precision": None,

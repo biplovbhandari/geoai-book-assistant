@@ -121,6 +121,10 @@ class VEvalRunSummary(Base):
     status: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    planned_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     deployment_label: Mapped[str | None] = mapped_column(Text)
     questions_evaluated: Mapped[int] = mapped_column(Integer)
     avg_retrieval_precision: Mapped[float | None] = mapped_column(Float)

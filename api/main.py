@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import sys
 import threading
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
@@ -23,7 +25,7 @@ from api.routes.eval import router as eval_router
 from api.routes.feedback import router as feedback_router
 from api.routes.search import router as search_router
 from geoai_rag import __version__
-from geoai_rag.config import get_settings
+from geoai_rag.config import Settings, get_settings
 from geoai_rag.db.bootstrap import ensure_active_deployment
 from geoai_rag.db.engine import check_db_schema_status, create_db_engine, create_session_factory
 from geoai_rag.db.models import EvalRun
@@ -35,12 +37,15 @@ logger = logging.getLogger(__name__)
 
 async def _sweep_orphaned_api_runs(
     session_factory: async_sessionmaker[AsyncSession],
+    stale_threshold_minutes: int = 10,
 ) -> None:
-    """Mark API-triggered eval runs left in 'running' or 'pending' as failed.
+    """Mark orphaned and stale eval runs as failed at startup.
 
     API runs only exist in the server process.
     Any still active at startup are orphans from a crash or restart.
     CLI runs are left alone because the CLI process may still be alive.
+    A second pass marks any run (API or CLI) as failed when its heartbeat
+    has not advanced within EVAL_STALE_THRESHOLD_MINUTES, indicating a stuck or crashed runner.
     """
     async with session_factory() as session:
         cursor = await session.execute(
@@ -52,6 +57,66 @@ async def _sweep_orphaned_api_runs(
         if count:
             logger.info("Marked %d orphaned API eval run(s) as failed", count)
         await session.commit()
+
+        # Sweep stale runs (any source) with no heartbeat progress in stale_threshold_minutes minutes
+        stale_threshold = datetime.now(UTC) - timedelta(minutes=stale_threshold_minutes)
+        stale_cursor = await session.execute(
+            update(EvalRun)
+            .where(
+                EvalRun.status.in_(["running"]),
+                EvalRun.last_heartbeat_at.isnot(None),
+                EvalRun.last_heartbeat_at < stale_threshold,
+            )
+            .values(status="failed")
+        )
+        stale_count = stale_cursor.rowcount  # type: ignore[union-attr]
+        if stale_count:
+            logger.info(
+                "Marked %d stale eval run(s) as failed (no heartbeat in %d min)",
+                stale_count,
+                stale_threshold_minutes,
+            )
+        await session.commit()
+
+
+async def _auto_load_eval_sets(
+    session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+) -> None:
+    """Load eval sets from YAML files into the database at startup."""
+    try:
+        from geoai_rag.eval.runner import load_eval_set, sync_eval_set_to_db
+
+        eval_dir = Path(settings.eval_data_dir)
+        if eval_dir.is_dir():
+            for yml_path in sorted(eval_dir.glob("*.yml")):
+                try:
+                    eval_set_data = load_eval_set(yml_path)
+                    await sync_eval_set_to_db(session_factory, eval_set_data)
+                    logger.info(
+                        "Loaded eval set '%s' from %s", eval_set_data["name"], yml_path.name
+                    )
+                except Exception:
+                    logger.warning("Failed to load eval set from %s", yml_path.name, exc_info=True)
+    except ImportError:
+        logger.debug("pyyaml not installed; skipping eval set auto-load")
+
+
+async def _periodic_stale_sweep(
+    session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+) -> None:
+    """Background task: sweep stale eval runs at the configured interval."""
+    interval = settings.eval_stale_threshold_minutes * 60
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await _sweep_orphaned_api_runs(
+                session_factory,
+                stale_threshold_minutes=settings.eval_stale_threshold_minutes,
+            )
+        except Exception:
+            logger.warning("Periodic stale sweep failed", exc_info=True)
 
 
 @asynccontextmanager
@@ -94,7 +159,12 @@ async def lifespan(app: FastAPI):
 
     app.state.active_deployment_id = None
     app.state.active_index_run_id = None
-    if app.state.db_session_factory is not None and status == "ready":
+    sweep_task = None
+
+    db_ready = app.state.db_session_factory is not None and status == "ready"
+    if db_ready:
+        assert app.state.db_session_factory is not None
+        session_factory = app.state.db_session_factory
         embedder = getattr(app.state.pipelines, "embedder", None) if app.state.pipelines else None
         expected_dim = app.state.settings.embedding_dimension
         if embedder is None or embedder.get_dimension() != expected_dim:
@@ -105,37 +175,25 @@ async def lifespan(app: FastAPI):
                     expected_dim,
                 )
         else:
-            async with app.state.db_session_factory() as session:
+            async with session_factory() as session:
                 result = await ensure_active_deployment(session, app.state.settings)
                 if result is not None:
                     app.state.active_deployment_id, app.state.active_index_run_id = result
 
-    if app.state.db_session_factory is not None and status == "ready":
-        await _sweep_orphaned_api_runs(app.state.db_session_factory)
+        await _sweep_orphaned_api_runs(
+            session_factory,
+            stale_threshold_minutes=app.state.settings.eval_stale_threshold_minutes,
+        )
 
-        # Auto-load eval sets from data/eval/*.yml
-        try:
-            from geoai_rag.eval.runner import load_eval_set, sync_eval_set_to_db
+        await _auto_load_eval_sets(session_factory, app.state.settings)
 
-            eval_dir = Path(app.state.settings.eval_data_dir)
-            if eval_dir.is_dir():
-                for yml_path in sorted(eval_dir.glob("*.yml")):
-                    try:
-                        eval_set_data = load_eval_set(yml_path)
-                        await sync_eval_set_to_db(app.state.db_session_factory, eval_set_data)
-                        logger.info(
-                            "Loaded eval set '%s' from %s", eval_set_data["name"], yml_path.name
-                        )
-                    except Exception:
-                        logger.warning(
-                            "Failed to load eval set from %s", yml_path.name, exc_info=True
-                        )
-        except ImportError:
-            logger.debug("pyyaml not installed; skipping eval set auto-load")
+        sweep_task = asyncio.create_task(_periodic_stale_sweep(session_factory, app.state.settings))
 
     try:
         yield
     finally:
+        if sweep_task is not None:
+            sweep_task.cancel()
         if app.state.db_engine is not None:
             await app.state.db_engine.dispose()
 
@@ -195,6 +253,7 @@ class PipelineConfig(BaseModel):
     rrf_k: int
     llm_provider: str
     llm_model: str
+    eval_stale_threshold_minutes: int
 
 
 @app.get("/config", response_model=PipelineConfig, dependencies=[Depends(require_admin_token)])
@@ -210,6 +269,7 @@ async def pipeline_config():
         rrf_k=s.rrf_k,
         llm_provider=s.llm_provider,
         llm_model=s.llm_model,
+        eval_stale_threshold_minutes=s.eval_stale_threshold_minutes,
     )
 
 

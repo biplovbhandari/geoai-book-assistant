@@ -238,3 +238,57 @@
   border-bottom: 1px solid var(--bd);
   background: var(--bg2);
 }
+
+/* Sparklines: four small trend charts across completed runs */
+
+.eval-sparklines {
+  margin: 1rem 0;
+}
+
+.eval-sparklines h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--tx2);
+}
+
+.sparkline-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+.sparkline-item {
+  display: flex;
+  flex-direction: column;
+  height: 80px;
+  overflow: hidden;
+  position: relative;
+}
+
+.sparkline-label {
+  font-size: 0.75rem;
+  color: var(--tx2);
+  margin-bottom: 0.25rem;
+}
+
+.sparkline-item canvas {
+  max-height: 56px !important;
+  width: 100% !important;
+}
+
+.eval-regression-warning {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: var(--bg2);
+  border: 1px solid var(--cr);
+  border-radius: 4px;
+  color: var(--cr);
+  font-size: 0.85rem;
+}
+
+@media (width <= 640px) {
+  .sparkline-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

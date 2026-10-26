@@ -50,6 +50,7 @@ def test_config_returns_the_active_pipeline_settings(client):
         "rrf_k": 42,
         "llm_provider": "test-provider",
         "llm_model": "qwen3:8b",
+        "eval_stale_threshold_minutes": 10,
     }
 
 
