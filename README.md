@@ -219,6 +219,11 @@ In production (launchd), raw uvicorn output goes to `stdout.log`/`stderr.log` wh
 
 `scripts/run_eval.py` runs a retrieval evaluation suite against the index and writes results to the database.
 The analytics dashboard includes an Eval tab that visualizes retrieval quality metrics over time.
+Failed or cancelled runs can be resumed with `--resume <run_id>` (CLI) or the Resume button in the dashboard.
+Running evaluations can be cancelled from the dashboard Cancel button.
+A heartbeat tracks progress per question; runs with no heartbeat within `EVAL_STALE_THRESHOLD_MINUTES` are marked as failed automatically.
+Score trend sparklines show quality across runs, with regression warnings when a metric drops significantly.
+Results can be downloaded as CSV from the dashboard or via `GET /eval/runs/{id}/export`.
 
 ## Graceful Shutdown
 
