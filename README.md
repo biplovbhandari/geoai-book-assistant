@@ -225,6 +225,15 @@ A heartbeat tracks progress per question; runs with no heartbeat within `EVAL_ST
 Score trend sparklines show quality across runs, with regression warnings when a metric drops significantly.
 Results can be downloaded as CSV from the dashboard or via `GET /eval/runs/{id}/export`.
 
+Retrieval quality is measured by NDCG (rank-aware: relevant chunks near the top score higher) and precision.
+Answer quality uses a 5-point LLM judge scale for similarity and faithfulness.
+A separate judge model can be configured with `EVAL_JUDGE_MODEL`, `EVAL_JUDGE_BASE_URL`, and `EVAL_JUDGE_API_KEY` to avoid self-evaluation bias.
+`LLM_MAX_TOKENS` controls the maximum response length (default 2048).
+`RERANKER_SCORE_THRESHOLD` filters low-scoring chunks after reranking.
+
+The dashboard includes a **Prompt Lab** tab for editing, testing, and versioning system prompts, and a **Retrieval Inspector** tab for inspecting retrieved chunks with scores.
+System prompt versions are stored in the database and linked to eval runs for reproducibility.
+
 ## Graceful Shutdown
 
 The production server runs with `--timeout-graceful-shutdown 30`, which drains in-flight SSE streams before exiting.
