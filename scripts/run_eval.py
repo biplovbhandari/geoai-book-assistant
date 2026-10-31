@@ -97,12 +97,8 @@ def _eval_files(eval_set: Path | None) -> list[Path]:
 
 
 def _judge_base_url(settings: Settings) -> str:
-    """Return the judge LLM's base URL from settings.
-
-    Settings reads LLM_BASE_URL from the environment and .env, so the judge
-    uses the same endpoint as the server.
-    """
-    return settings.llm_base_url
+    """Return the judge LLM's base URL: EVAL_JUDGE_BASE_URL when set, else LLM_BASE_URL."""
+    return settings.eval_judge_base_url or settings.llm_base_url
 
 
 def _build_judge_client(settings: Settings, llm_model: str) -> OpenAICompatibleClient:
@@ -112,11 +108,15 @@ def _build_judge_client(settings: Settings, llm_model: str) -> OpenAICompatibleC
     point at a local Ollama, the NASA proxy, or any other OpenAI-compatible endpoint.
     """
     base_url = _judge_base_url(settings)
-    logger.info("Judge LLM: %s at %s", llm_model, base_url)
+    judge_model = settings.eval_judge_model or llm_model
+    judge_api_key = (
+        settings.eval_judge_api_key.get_secret_value() or settings.llm_api_key.get_secret_value()
+    )
+    logger.info("Judge LLM: %s at %s", judge_model, base_url)
     return OpenAICompatibleClient(
         base_url=base_url,
-        api_key=settings.llm_api_key.get_secret_value(),
-        model=llm_model,
+        api_key=judge_api_key,
+        model=judge_model,
         timeout=JUDGE_TIMEOUT_SECONDS,
         reasoning_effort=settings.eval_judge_reasoning_effort,
     )
