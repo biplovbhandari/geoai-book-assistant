@@ -21,6 +21,7 @@ _ENV = {
     "RRF_K": "42",
     "LLM_PROVIDER": "test-provider",
     "LLM_MODEL": "qwen3:8b",
+    "LLM_MAX_TOKENS": "4096",
 }
 
 
@@ -50,7 +51,10 @@ def test_config_returns_the_active_pipeline_settings(client):
         "rrf_k": 42,
         "llm_provider": "test-provider",
         "llm_model": "qwen3:8b",
+        "llm_max_tokens": 4096,
         "eval_stale_threshold_minutes": 10,
+        "system_prompt_hash": "unknown",
+        "system_prompt_id": None,
     }
 
 

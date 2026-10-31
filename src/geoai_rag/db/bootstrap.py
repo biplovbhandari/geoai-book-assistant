@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 from typing import Any
 
@@ -87,7 +86,7 @@ async def _get_active_deployment(session: AsyncSession) -> tuple[int, int] | Non
 
 def _read_prompt() -> tuple[str, str]:
     """Return (sha256_hexdigest, content) of the system prompt."""
-    prompt_hash = hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+    prompt_hash = PromptVersion.compute_hash(SYSTEM_PROMPT)
     return prompt_hash, SYSTEM_PROMPT
 
 

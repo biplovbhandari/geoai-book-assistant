@@ -128,6 +128,6 @@ class VEvalRunSummary(Base):
     deployment_label: Mapped[str | None] = mapped_column(Text)
     questions_evaluated: Mapped[int] = mapped_column(Integer)
     avg_retrieval_precision: Mapped[float | None] = mapped_column(Float)
-    avg_retrieval_recall: Mapped[float | None] = mapped_column(Float)
+    avg_retrieval_ndcg: Mapped[float | None] = mapped_column(Float)
     avg_answer_similarity: Mapped[float | None] = mapped_column(Float)
     avg_faithfulness: Mapped[float | None] = mapped_column(Float)
