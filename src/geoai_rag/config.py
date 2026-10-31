@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     retrieval_strategy: str = "hybrid"
     retrieval_top_k: int = Field(default=8, ge=TOP_K_MIN, le=TOP_K_MAX)
     reranker_provider: str = "noop"
+    reranker_score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
     sparse_model_name: str = "prithivida/Splade_PP_en_v1"
     rrf_k: int = Field(default=60, ge=1, le=200)
@@ -35,7 +36,11 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=60.0, ge=1.0, le=300.0)
     llm_reasoning_effort: str = Field(default="none")
     llm_extra_create_params: dict = Field(default_factory=dict)
+    llm_max_tokens: int = Field(default=2048, ge=128, le=16384)
     eval_judge_reasoning_effort: str = Field(default="none")
+    eval_judge_model: str = ""
+    eval_judge_base_url: str = ""
+    eval_judge_api_key: SecretStr = SecretStr("")
     eval_data_dir: str = "data/eval"
     eval_stale_threshold_minutes: int = Field(default=10, ge=1, le=1440)
 

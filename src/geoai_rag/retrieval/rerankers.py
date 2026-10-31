@@ -10,11 +10,21 @@ _NON_FINITE_SENTINEL = -1e9
 class LocalCrossEncoderReranker:
     """Cross-encoder reranker using sentence-transformers models."""
 
-    def __init__(self, model_name: str, cache_dir: str = "/models") -> None:
-        """Load a cross-encoder model and verify it is a single-label scorer."""
+    def __init__(
+        self,
+        model_name: str,
+        cache_dir: str = "/models",
+        score_threshold: float | None = None,
+    ) -> None:
+        """Load a cross-encoder model and verify it is a single-label scorer.
+
+        ``score_threshold`` is the default minimum score applied by ``rerank``
+        when no per-call threshold is given.
+        """
         from sentence_transformers import CrossEncoder
 
         self._model_name = model_name
+        self._score_threshold = score_threshold
         self._model = CrossEncoder(model_name, cache_folder=cache_dir)
 
         if self._model.num_labels != 1:
@@ -29,8 +39,14 @@ class LocalCrossEncoderReranker:
         query: str,
         candidates: list[ScoredChunk],
         top_k: int,
+        score_threshold: float | None = None,
     ) -> list[ScoredChunk]:
-        """Re-score candidates using cross-encoder and return top_k by relevance."""
+        """Re-score candidates using cross-encoder and return top_k by relevance.
+
+        Chunks scoring below the threshold (per-call value, else the constructor
+        default) are dropped, but the best chunk is always kept so the result is
+        never empty for non-empty input.
+        """
         import numpy as np
 
         if not candidates:
@@ -54,6 +70,11 @@ class LocalCrossEncoderReranker:
             scored.append(ScoredChunk(chunk=sc.chunk, score=score, ranking_method="reranked"))
 
         scored.sort(key=lambda sc: sc.score, reverse=True)
+
+        threshold = score_threshold if score_threshold is not None else self._score_threshold
+        if threshold is not None:
+            kept = [sc for sc in scored if sc.score >= threshold]
+            scored = kept or scored[:1]
         return scored[:top_k]
 
 
