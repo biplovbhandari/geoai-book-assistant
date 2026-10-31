@@ -23,10 +23,11 @@ format:
 
 # ------------------ Quality checks -------------------------------
 
-# Run ruff linter and format check
+# Run ruff linter, format check, and CSS linter
 lint:
     uv run ruff check .
     uv run ruff format --check .
+    npx stylelint "**/*.css"
 
 # Run pyright type checker
 typecheck:

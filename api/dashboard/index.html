@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="styles/layout.css">
     <link rel="stylesheet" href="styles/analytics.css">
     <link rel="stylesheet" href="styles/eval.css">
+    <link rel="stylesheet" href="styles/prompt-lab.css">
+    <link rel="stylesheet" href="styles/retrieval.css">
 </head>
 <body>
     <p id="boot-error" class="empty err" role="alert" hidden></p>
@@ -18,7 +20,7 @@
         Questions, titles, labels, answers and source paths come from public chat users or from the model, so
         render them only through {{ }} or a :attribute binding, which escape their values. Never use v-html in
         this template.
-        Each view's state lives in a namespace: `analytics.*` and `eval.*`. Only the shared formatting helpers
+        Each view's state lives in a namespace: `analytics.*`, `eval.*`, `promptLab.*` and `retrieval.*`. Only the shared formatting helpers
         and the sign-in state are top-level names.
     -->
     <div id="app" v-cloak>
@@ -44,6 +46,8 @@
             <nav class="tabs" aria-label="Dashboard sections">
                 <button type="button" class="tab" :class="{ on: tab === 'analytics' }" :aria-pressed="tab === 'analytics'" @click="tab = 'analytics'">Analytics</button>
                 <button type="button" class="tab" :class="{ on: tab === 'eval' }" :aria-pressed="tab === 'eval'" @click="tab = 'eval'">Evaluation</button>
+                <button type="button" class="tab" :class="{ on: tab === 'prompt-lab' }" :aria-pressed="tab === 'prompt-lab'" @click="tab = 'prompt-lab'">Prompt Lab</button>
+                <button type="button" class="tab" :class="{ on: tab === 'retrieval' }" :aria-pressed="tab === 'retrieval'" @click="tab = 'retrieval'">Retrieval Inspector</button>
             </nav>
 
             <div v-show="tab === 'analytics'">
@@ -171,8 +175,8 @@
                         </label>
                         <button type="button" class="eval-refresh" title="Refresh runs" aria-label="Refresh runs" @click="eval.fetchAll()">&#x21BB;</button>
                         <button type="button" class="eval-refresh" title="Download CSV" aria-label="Download CSV" @click="eval.downloadCsv()" :disabled="!eval.selectedRunId">&#x2913;</button>
-                        <button type="button" class="eval-refresh" title="Resume run" aria-label="Resume run" @click="eval.resumeRun()" v-if="eval.selectedRun && (eval.selectedRun.status === 'failed' || eval.selectedRun.status === 'cancelled')">&#x25B6;</button>
-                        <button type="button" class="eval-refresh" title="Cancel run" aria-label="Cancel run" @click="eval.cancelRun()" v-if="eval.selectedRun && (eval.selectedRun.status === 'running' || eval.selectedRun.status === 'pending')">&#x2716;</button>
+                        <button type="button" class="eval-refresh btn-success" title="Resume run" aria-label="Resume run" @click="eval.resumeRun()" v-if="eval.selectedRun && (eval.selectedRun.status === 'failed' || eval.selectedRun.status === 'cancelled')">&#x25B6;</button>
+                        <button type="button" class="eval-refresh btn-danger-outline" title="Cancel run" aria-label="Cancel run" @click="eval.cancelRun()" v-if="eval.selectedRun && (eval.selectedRun.status === 'running' || eval.selectedRun.status === 'pending')">&#x2716;</button>
                     </div>
                     <div class="eval-controls">
                         <label class="eval-field" v-if="eval.sets && eval.sets.length">
@@ -191,7 +195,7 @@
                                 <span v-if="!eval.questions || eval.questions.length === 0" class="eval-hint">No questions loaded</span>
                             </div>
                         </div>
-                        <button type="button" class="btn" :disabled="eval.busy || !eval.selectedSetName" @click="eval.startRun(eval.selectedSetName, null, eval.selectedQuestionIds)">{{ eval.busy ? 'Running...' : 'Run Evaluation' }}</button>
+                        <button type="button" class="btn btn-primary" :disabled="eval.busy || !eval.selectedSetName" @click="eval.startRun(eval.selectedSetName, null, eval.selectedQuestionIds)">{{ eval.busy ? 'Running...' : 'Run Evaluation' }}</button>
                     </div>
                 </div>
                 <p class="empty err" role="alert" v-if="eval.errors.run">{{ eval.errors.run }}</p>
@@ -211,7 +215,7 @@
                 <div class="eval-sparklines" v-if="eval.sparklineVisible">
                     <h3>Score Trends</h3>
                     <div class="sparkline-grid">
-                        <div class="sparkline-item" v-for="(label, i) in ['Precision', 'Recall', 'Similarity', 'Faithfulness']" :key="i">
+                        <div class="sparkline-item" v-for="(label, i) in ['Precision', 'NDCG', 'Similarity', 'Faithfulness']" :key="i">
                             <span class="sparkline-label">{{ label }}</span>
                             <canvas :id="'sparkline-' + i" height="40"></canvas>
                         </div>
@@ -284,6 +288,88 @@
                     </div>
                     <p class="empty" :class="{ err: eval.errors.detail }" v-if="eval.messages.detail">{{ eval.messages.detail }}</p>
                 </section>
+            </div>
+
+            <div v-show="tab === 'prompt-lab'">
+                <div class="prompt-lab">
+                    <div class="prompt-editor">
+                        <h2>System Prompt</h2>
+                        <div v-if="promptLab.activePrompt" class="prompt-active-info">
+                            Active: #{{ promptLab.activePrompt.id }} · {{ promptLab.activePrompt.hash.slice(0, 12) }}<span v-if="promptLab.activePrompt.label"> · {{ promptLab.activePrompt.label }}</span>
+                        </div>
+                        <textarea v-model="promptLab.editorContent" rows="12" spellcheck="false"></textarea>
+                        <div class="prompt-editor-actions">
+                            <input type="text" v-model="promptLab.labelInput" placeholder="Label this version..." class="prompt-label-input">
+                            <button type="button" class="eval-btn btn-primary" @click="promptLab.save()" :disabled="promptLab.saving">Save</button>
+                        </div>
+                    </div>
+                    <div class="prompt-test">
+                        <h2>Test</h2>
+                        <div class="prompt-test-controls">
+                            <input type="text" v-model="promptLab.testQuestion" placeholder="Enter a test question..." class="prompt-test-input">
+                            <button type="button" class="eval-btn btn-primary" @click="promptLab.test()" :disabled="promptLab.testing || !promptLab.testQuestion">Test</button>
+                        </div>
+                        <div v-if="promptLab.testResult" class="prompt-test-result">
+                            <h3>Answer</h3>
+                            <div class="prompt-test-answer">{{ promptLab.testResult.answer }}</div>
+                            <h3 v-if="promptLab.testResult.sources && promptLab.testResult.sources.length">Sources</h3>
+                            <ul v-if="promptLab.testResult.sources">
+                                <li v-for="s in promptLab.testResult.sources" :key="s">{{ s }}</li>
+                            </ul>
+                        </div>
+                        <p v-if="promptLab.error" class="eval-error">{{ promptLab.error }}</p>
+                    </div>
+                </div>
+                <div class="prompt-versions" v-if="promptLab.versions && promptLab.versions.length">
+                    <h2>Version History</h2>
+                    <div class="tbl-scroll">
+                        <table>
+                            <thead><tr><th>ID</th><th>Hash</th><th>Label</th><th>Status</th><th>Created</th><th></th></tr></thead>
+                            <tbody>
+                                <tr v-for="v in promptLab.versions" :key="v.id">
+                                    <td class="mono">{{ v.id }}</td>
+                                    <td class="mono">{{ v.hash }}</td>
+                                    <td>{{ v.label || '-' }}</td>
+                                    <td><span v-if="v.is_active" class="prompt-badge-active">Active</span></td>
+                                    <td class="sub">{{ new Date(v.created_at).toLocaleString() }}</td>
+                                    <td><button v-if="!v.is_active" type="button" class="eval-btn prompt-btn-activate" @click="promptLab.activate(v.id)">Activate</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div v-show="tab === 'retrieval'">
+                <div class="retrieval-controls">
+                    <input type="text" v-model="retrieval.question" placeholder="Enter a question to inspect retrieval..." class="retrieval-input" @keyup.enter="retrieval.inspect()">
+                    <input type="text" v-model="retrieval.expectedSources" placeholder="Expected source prefixes (comma-separated)..." class="retrieval-input" style="font-size:11px">
+                    <button type="button" class="eval-btn btn-primary" @click="retrieval.inspect()" :disabled="retrieval.loading || !retrieval.question">Inspect</button>
+                </div>
+                <p v-if="retrieval.error" class="eval-error">{{ retrieval.error }}</p>
+                <div v-if="retrieval.results">
+                    <div class="retrieval-config">
+                        {{ retrieval.results.strategy }} &middot; top_k={{ retrieval.results.top_k }} &middot; rrf_k={{ retrieval.results.rrf_k }} &middot; {{ retrieval.results.reranker }}
+                        <span v-if="retrieval.results.precision != null"> &middot; precision={{ retrieval.results.precision.toFixed(3) }}</span>
+                        <span v-if="retrieval.results.ndcg != null"> &middot; ndcg={{ retrieval.results.ndcg.toFixed(3) }}</span>
+                    </div>
+                    <div class="tbl-scroll">
+                        <table>
+                            <thead><tr><th>#</th><th>Source</th><th>Text</th><th style="text-align:right">Score</th></tr></thead>
+                            <tbody>
+                                <tr v-for="c in retrieval.results.chunks" :key="c.rank" :class="{ 'retrieval-match': c.matches_expected }">
+                                    <td class="mono">{{ c.rank }}</td>
+                                    <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.source_path }}</td>
+                                    <td class="retrieval-text-cell" @click="retrieval.toggleExpand(c.rank)">
+                                        <div v-if="!retrieval.isExpanded(c.rank)" class="retrieval-text-preview">{{ c.textPreview }}</div>
+                                        <div v-else class="retrieval-text-full">{{ c.text }}</div>
+                                    </td>
+                                    <td class="mono" style="text-align:right" :class="{ 'score-hi': c.score >= 0.7, 'score-md': c.score >= 0.4 && c.score < 0.7, 'score-lo': c.score < 0.4 }">{{ c.score.toFixed(3) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </template>
     </div>

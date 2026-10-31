@@ -1,3 +1,15 @@
 {
-  "extends": "stylelint-config-standard"
+  "extends": "stylelint-config-standard",
+  "rules": {
+    "value-keyword-case": ["lower", {
+      "ignoreKeywords": [
+        "BlinkMacSystemFont",
+        "Helvetica",
+        "Arial",
+        "SFMono-Regular",
+        "Menlo",
+        "Consolas"
+      ]
+    }]
+  }
 }
