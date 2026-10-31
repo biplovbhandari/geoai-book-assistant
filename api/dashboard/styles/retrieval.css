@@ -1,0 +1,98 @@
+/* Retrieval Inspector tab. Table, panel and button rules come from layout.css. */
+
+.retrieval-input {
+  width: 100%;
+  max-width: 640px;
+  padding: 5px 8px;
+  border: 1px solid var(--bd);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--tx);
+  font: inherit;
+  font-size: 13px;
+}
+
+.retrieval-input:focus {
+  outline: none;
+  border-color: var(--ac);
+}
+
+/* One line naming the retrieval settings the results were produced with. */
+
+.retrieval-config {
+  padding: 8px 0;
+  color: var(--tx2);
+  font-size: 12px;
+}
+
+/* Precision and NDCG summary above the table. */
+
+.retrieval-metrics {
+  padding: 4px 0 8px;
+  color: var(--tx);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.retrieval-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.retrieval-table th,
+.retrieval-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--bd);
+  text-align: left;
+  vertical-align: top;
+}
+
+.retrieval-table th {
+  color: var(--tx2);
+  font-weight: 600;
+}
+
+/* Chunk text cell: click to switch between a one-line preview and the full text. */
+
+.retrieval-text-cell {
+  cursor: pointer;
+  max-width: 0;
+  width: 60%;
+}
+
+.retrieval-text-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.retrieval-text-full {
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A chunk whose source starts with one of the expected prefixes. */
+
+.retrieval-match {
+  border-left: 3px solid var(--gd);
+}
+
+.retrieval-score {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.retrieval-score.high {
+  color: var(--gd);
+}
+
+.retrieval-score.mid {
+  color: var(--wn);
+}
+
+.retrieval-score.low {
+  color: var(--cr);
+}
