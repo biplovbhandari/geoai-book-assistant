@@ -40,15 +40,12 @@ logger = logging.getLogger(__name__)
 
 async def _sweep_orphaned_api_runs(
     session_factory: async_sessionmaker[AsyncSession],
-    stale_threshold_minutes: int = 10,
 ) -> None:
-    """Mark orphaned and stale eval runs as failed at startup.
+    """Mark API-triggered eval runs left in running/pending as failed.
 
-    API runs only exist in the server process.
-    Any still active at startup are orphans from a crash or restart.
+    Runs at startup only. API runs live in the server process, so any still
+    active at startup are orphans from a crash or restart.
     CLI runs are left alone because the CLI process may still be alive.
-    A second pass marks any run (API or CLI) as failed when its heartbeat
-    has not advanced within EVAL_STALE_THRESHOLD_MINUTES, indicating a stuck or crashed runner.
     """
     async with session_factory() as session:
         cursor = await session.execute(
@@ -61,7 +58,17 @@ async def _sweep_orphaned_api_runs(
             logger.info("Marked %d orphaned API eval run(s) as failed", count)
         await session.commit()
 
-        # Sweep stale runs (any source) with no heartbeat progress in stale_threshold_minutes minutes
+
+async def _sweep_stale_runs(
+    session_factory: async_sessionmaker[AsyncSession],
+    stale_threshold_minutes: int = 10,
+) -> None:
+    """Mark any eval run as failed when its heartbeat has gone stale.
+
+    A run whose heartbeat has not advanced within the threshold is likely stuck or crashed.
+    Runs without a heartbeat (old runs, pre-migration) are left alone.
+    """
+    async with session_factory() as session:
         stale_threshold = datetime.now(UTC) - timedelta(minutes=stale_threshold_minutes)
         stale_cursor = await session.execute(
             update(EvalRun)
@@ -145,12 +152,12 @@ async def _periodic_stale_sweep(
     session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
 ) -> None:
-    """Background task: sweep stale eval runs at the configured interval."""
+    """Background task: periodically sweep stale eval runs (heartbeat-only, not API orphans)."""
     interval = settings.eval_stale_threshold_minutes * 60
     while True:
         await asyncio.sleep(interval)
         try:
-            await _sweep_orphaned_api_runs(
+            await _sweep_stale_runs(
                 session_factory,
                 stale_threshold_minutes=settings.eval_stale_threshold_minutes,
             )
@@ -219,7 +226,8 @@ async def lifespan(app: FastAPI):
                 if result is not None:
                     app.state.active_deployment_id, app.state.active_index_run_id = result
 
-        await _sweep_orphaned_api_runs(
+        await _sweep_orphaned_api_runs(session_factory)
+        await _sweep_stale_runs(
             session_factory,
             stale_threshold_minutes=app.state.settings.eval_stale_threshold_minutes,
         )

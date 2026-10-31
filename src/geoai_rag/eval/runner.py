@@ -31,7 +31,14 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from geoai_rag.db.models import Deployment, EvalQuestion, EvalResult, EvalRun, EvalSet
+from geoai_rag.db.models import (
+    Deployment,
+    EvalQuestion,
+    EvalResult,
+    EvalRun,
+    EvalSet,
+    PromptVersion,
+)
 from geoai_rag.eval.scorer import (
     build_faithfulness_prompt,
     build_similarity_prompt,
@@ -923,6 +930,11 @@ class EvalRunner:
                     "No active deployment in the database. Start the API once against this "
                     "database so it records one, then run the evaluation again."
                 ) from exc
+            prompt_result = await session.execute(
+                select(PromptVersion.id).where(PromptVersion.is_active.is_(True)).limit(1)
+            )
+            active_prompt_id = prompt_result.scalar_one_or_none()
+
             run = EvalRun(
                 eval_set_id=eval_set_id,
                 deployment_id=deployment.id,
@@ -931,6 +943,7 @@ class EvalRunner:
                 config=config,
                 planned_count=planned_count,
                 planned_question_ids=planned_question_ids,
+                system_prompt_id=active_prompt_id,
             )
             session.add(run)
             await session.flush()
