@@ -576,7 +576,7 @@ def test_run_scores_and_stores_each_selected_question(eval_file, http, db, runne
     assert [c["chunk_id"] for c in result.citations] == [f"chunk-{i}" for i in range(4)]
     expected_scores = {
         "retrieval_precision": 0.25,
-        "retrieval_recall": 0.5,
+        "retrieval_ndcg": 1.0,
         "answer_similarity": 0.8,
         "faithfulness": 0.6,
     }

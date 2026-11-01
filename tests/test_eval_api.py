@@ -34,7 +34,7 @@ SESSION_FACTORY = object()
 
 SCORES = {
     "retrieval_precision": 0.5,
-    "retrieval_recall": 1.0,
+    "retrieval_ndcg": 1.0,
     "answer_similarity": 0.8,
     "faithfulness": 0.7,
 }
@@ -253,7 +253,7 @@ def test_runs_returns_summaries_newest_first(client, session):
                 deployment_label="v1",
                 questions_evaluated=15,
                 avg_retrieval_precision=0.45,
-                avg_retrieval_recall=0.72,
+                avg_retrieval_ndcg=0.72,
                 avg_answer_similarity=0.68,
                 avg_faithfulness=0.81,
             ),
@@ -267,7 +267,7 @@ def test_runs_returns_summaries_newest_first(client, session):
                 deployment_label=None,
                 questions_evaluated=0,
                 avg_retrieval_precision=None,
-                avg_retrieval_recall=None,
+                avg_retrieval_ndcg=None,
                 avg_answer_similarity=None,
                 avg_faithfulness=None,
             ),
@@ -291,7 +291,7 @@ def test_runs_returns_summaries_newest_first(client, session):
         "deployment_label": "v1",
         "questions_evaluated": 15,
         "avg_retrieval_precision": 0.45,
-        "avg_retrieval_recall": 0.72,
+        "avg_retrieval_ndcg": 0.72,
         "avg_answer_similarity": 0.68,
         "avg_faithfulness": 0.81,
     }
@@ -306,7 +306,7 @@ def test_runs_returns_summaries_newest_first(client, session):
         "deployment_label": None,
         "questions_evaluated": 0,
         "avg_retrieval_precision": None,
-        "avg_retrieval_recall": None,
+        "avg_retrieval_ndcg": None,
         "avg_answer_similarity": None,
         "avg_faithfulness": None,
     }

@@ -26,6 +26,7 @@ class QueryPipeline:
         llm_client: LLMClient | None = None,
         citation_builder: CitationBuilder | None = None,
         top_k: int = 8,
+        max_tokens: int = 2048,
     ) -> None:
         """Initialize the query pipeline.
 
@@ -35,12 +36,14 @@ class QueryPipeline:
             llm_client: Generates answers from messages (None disables ask).
             citation_builder: Extracts citation metadata from chunks (None disables ask).
             top_k: Number of chunks to retrieve for ask() (from settings).
+            max_tokens: Maximum tokens for generated answers (from settings).
         """
         self._strategy = strategy
         self._context_builder = context_builder
         self._llm_client = llm_client
         self._citation_builder = citation_builder
         self._top_k = top_k
+        self._max_tokens = max_tokens
 
     @property
     def generation_ready(self) -> bool:
@@ -141,7 +144,7 @@ class QueryPipeline:
 
         messages = self._context_builder.build(question, chunks, history=history)
         t1 = time.monotonic()
-        answer_text = self._llm_client.chat(messages)
+        answer_text = self._llm_client.chat(messages, max_tokens=self._max_tokens)
         generation_ms = int((time.monotonic() - t1) * 1000)
         citations = self._citation_builder.build(chunks)
 
@@ -235,7 +238,7 @@ class QueryPipeline:
 
         has_content = False
         t1 = time.monotonic()
-        for token in self._llm_client.chat_stream(messages):
+        for token in self._llm_client.chat_stream(messages, max_tokens=self._max_tokens):
             yield {"type": "token", "content": token}
             if token.strip():
                 has_content = True

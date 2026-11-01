@@ -1,0 +1,134 @@
+/* Prompt Lab tab. Tables, buttons and panels come from layout.css; this file adds the two-column layout and the prompt-specific parts. */
+
+.prompt-lab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.prompt-active-info {
+  font-size: 11px;
+  color: var(--tx2);
+  font-family: var(--mono, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace);
+}
+
+.prompt-editor,
+.prompt-test {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prompt-editor textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 200px;
+  padding: 8px;
+  border: 1px solid var(--bd);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--tx);
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+
+.prompt-save {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.prompt-save input {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--bd);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--tx);
+  font: inherit;
+  font-size: 12px;
+}
+
+.prompt-test-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--bd);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--tx);
+  font: inherit;
+  font-size: 12px;
+}
+
+.prompt-editor textarea:focus,
+.prompt-test-input:focus {
+  outline: 2px solid var(--ac);
+  outline-offset: -1px;
+  border-color: var(--ac);
+}
+
+/* .btn-primary, .btn-primary:hover, .btn-primary:disabled are defined globally in eval.css */
+
+.prompt-test-result {
+  padding: 8px;
+  border: 1px solid var(--bd);
+  border-radius: 3px;
+  background: var(--bg2);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prompt-test-result ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--tx2);
+}
+
+.prompt-versions {
+  margin-top: 16px;
+}
+
+.prompt-versions table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.prompt-badge-active {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--gd);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.prompt-btn-activate {
+  padding: 2px 8px;
+  border: 1px solid var(--bd);
+  border-radius: 3px;
+  background: var(--bg2);
+  color: var(--tx);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.prompt-btn-activate:hover {
+  background: var(--bd);
+}
+
+@media (width <= 640px) {
+  .prompt-lab {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

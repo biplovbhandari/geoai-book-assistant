@@ -31,13 +31,20 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from geoai_rag.db.models import Deployment, EvalQuestion, EvalResult, EvalRun, EvalSet
+from geoai_rag.db.models import (
+    Deployment,
+    EvalQuestion,
+    EvalResult,
+    EvalRun,
+    EvalSet,
+    PromptVersion,
+)
 from geoai_rag.eval.scorer import (
     build_faithfulness_prompt,
     build_similarity_prompt,
     parse_judge_score,
+    retrieval_ndcg,
     retrieval_precision,
-    retrieval_recall,
 )
 from geoai_rag.interfaces import LLMClient
 from geoai_rag.models import Answer
@@ -799,17 +806,12 @@ class EvalRunner:
                         break
 
                 question_key = question["id"]
+                await self._update_heartbeat(run_id)
                 for attempt in range(QUESTION_MAX_RETRIES + 1):
                     try:
                         scored = await self._score_question(question)
                         await self._store_result(run_id, question, scored)
-                        async with self._session_factory() as session:
-                            await session.execute(
-                                update(EvalRun)
-                                .where(EvalRun.id == run_id)
-                                .values(last_heartbeat_at=func.now())
-                            )
-                            await session.commit()
+                        await self._update_heartbeat(run_id)
                         results.append(
                             {
                                 "id": question_key,
@@ -928,6 +930,11 @@ class EvalRunner:
                     "No active deployment in the database. Start the API once against this "
                     "database so it records one, then run the evaluation again."
                 ) from exc
+            prompt_result = await session.execute(
+                select(PromptVersion.id).where(PromptVersion.is_active.is_(True)).limit(1)
+            )
+            active_prompt_id = prompt_result.scalar_one_or_none()
+
             run = EvalRun(
                 eval_set_id=eval_set_id,
                 deployment_id=deployment.id,
@@ -936,6 +943,7 @@ class EvalRunner:
                 config=config,
                 planned_count=planned_count,
                 planned_question_ids=planned_question_ids,
+                system_prompt_id=active_prompt_id,
             )
             session.add(run)
             await session.flush()
@@ -967,7 +975,7 @@ class EvalRunner:
         question_id = question["id"]
         scores = {
             "retrieval_precision": retrieval_precision(retrieved_paths, expected),
-            "retrieval_recall": retrieval_recall(retrieved_paths, expected),
+            "retrieval_ndcg": retrieval_ndcg(retrieved_paths, expected),
             "answer_similarity": _judge_score(similarity_reply, question_id, "answer_similarity"),
             "faithfulness": _judge_score(faithfulness_reply, question_id, "faithfulness"),
         }
@@ -989,6 +997,14 @@ class EvalRunner:
                     trace=scored.trace,
                     scores=scored.scores,
                 )
+            )
+            await session.commit()
+
+    async def _update_heartbeat(self, run_id: int) -> None:
+        """Touch the heartbeat timestamp so the stale sweep knows this run is alive."""
+        async with self._session_factory() as session:
+            await session.execute(
+                update(EvalRun).where(EvalRun.id == run_id).values(last_heartbeat_at=func.now())
             )
             await session.commit()
 

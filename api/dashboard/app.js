@@ -20,6 +20,8 @@ import {
 
 import { useAnalytics } from './views/analytics.js';
 import { useEval } from './views/eval.js';
+import { usePromptLab } from './views/prompt-lab.js';
+import { useRetrieval } from './views/retrieval.js';
 
 if (typeof Vue === 'undefined') {
     // #app stays hidden (v-cloak) until Vue mounts, so a failed CDN load would otherwise leave a blank page.
@@ -47,6 +49,8 @@ createApp({
         const tab = ref('analytics');
         const analytics = useAnalytics(session, disconnect);
         const evaluation = useEval(session, disconnect);
+        const promptLab = usePromptLab(session, disconnect);
+        const retrieval = useRetrieval(session, disconnect);
 
         /** Stops the 60-second auto-refresh. */
         function stopRefresh() {
@@ -68,6 +72,7 @@ createApp({
             authenticated.value = true;
             analytics.fetchAll();
             evaluation.fetchAll();
+            promptLab.fetchAll();
             stopRefresh();
             refreshTimer = setInterval(() => {
                 analytics.fetchAll();
@@ -109,6 +114,8 @@ createApp({
             session.token = '';
             analytics.reset();
             evaluation.reset();
+            promptLab.reset();
+            retrieval.reset();
             tab.value = 'analytics';
             authError.value = typeof reason === 'string' ? reason : '';
             authenticated.value = false;
@@ -136,6 +143,8 @@ createApp({
             // The local is `evaluation` because a strict-mode module cannot bind the name `eval`. As a
             // property name it is legal, and the template reads it as `eval`.
             eval: reactive(evaluation),
+            promptLab: reactive(promptLab),
+            retrieval: reactive(retrieval),
             // A string `ref` in the template is matched by name against the top level of this object,
             // so the chart canvas cannot live inside the analytics namespace.
             dailyCanvas: analytics.dailyCanvas,

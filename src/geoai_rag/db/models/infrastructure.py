@@ -1,6 +1,8 @@
+import hashlib
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+import sqlalchemy as sa
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -21,10 +23,20 @@ class PromptVersion(TimestampMixin, Base):
     hash: Mapped[str] = mapped_column(Text, unique=True)
     content: Mapped[str] = mapped_column(Text)
     label: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(sa.Boolean, default=False)
 
     deployments: Mapped[list["Deployment"]] = relationship(
         back_populates="prompt_version", passive_deletes="all"
     )
+
+    @staticmethod
+    def compute_hash(content: str) -> str:
+        """SHA-256 hex digest of the prompt text, stripped of surrounding whitespace.
+
+        Stripping ensures the hash is stable regardless of trailing newlines in PROMPT.md.
+        All callers must use this method to avoid hash mismatches.
+        """
+        return hashlib.sha256(content.strip().encode("utf-8")).hexdigest()
 
 
 class IndexRun(TimestampMixin, Base):

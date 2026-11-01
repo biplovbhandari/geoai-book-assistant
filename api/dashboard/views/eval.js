@@ -40,10 +40,10 @@ const SCORE_COLUMNS = [
         hint: 'Share of the retrieved chunks that come from an expected source',
     },
     {
-        key: 'retrieval_recall',
-        label: 'Recall',
-        avgLabel: 'Avg recall',
-        hint: 'Share of the expected sources found among the retrieved chunks',
+        key: 'retrieval_ndcg',
+        label: 'NDCG',
+        avgLabel: 'Avg NDCG',
+        hint: 'Rank-aware retrieval quality: relevant chunks near the top score higher',
     },
     {
         key: 'answer_similarity',
@@ -666,7 +666,7 @@ export function useEval(session, onAuthError) {
         var latest = completedRuns[completedRuns.length - 1];
         var previous = completedRuns[completedRuns.length - 2];
         var drops = [];
-        var metricKeys = ['avg_retrieval_precision', 'avg_retrieval_recall', 'avg_answer_similarity', 'avg_faithfulness'];
+        var metricKeys = ['avg_retrieval_precision', 'avg_retrieval_ndcg', 'avg_answer_similarity', 'avg_faithfulness'];
         metricKeys.forEach(function(m) {
             var drop = (previous[m] || 0) - (latest[m] || 0);
             if (drop > 0.1) {
@@ -690,7 +690,7 @@ export function useEval(session, onAuthError) {
 
         if (completedRuns.length < 2) return;
 
-        var metricKeys = ['avg_retrieval_precision', 'avg_retrieval_recall', 'avg_answer_similarity', 'avg_faithfulness'];
+        var metricKeys = ['avg_retrieval_precision', 'avg_retrieval_ndcg', 'avg_answer_similarity', 'avg_faithfulness'];
 
         metricKeys.forEach(function(metric, i) {
             var canvas = document.getElementById('sparkline-' + i);

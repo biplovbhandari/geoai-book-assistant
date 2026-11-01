@@ -24,7 +24,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.datastructures import State
 
-from api.dependencies import DbSession, require_admin_token, require_db_session
+from api.dependencies import (
+    DbSession,
+    acquire_llm_slot,
+    require_admin_token,
+    require_db_session,
+    require_generation_ready,
+    require_retrieval_ready,
+)
 from geoai_rag.config import Settings, get_settings
 from geoai_rag.db.models import EvalQuestion, EvalResult, EvalRun, EvalSet, VEvalRunSummary
 from geoai_rag.eval.runner import (
@@ -35,6 +42,7 @@ from geoai_rag.eval.runner import (
     StartedRun,
     load_eval_set,
 )
+from geoai_rag.generation.context_builder import DefaultContextBuilder
 from geoai_rag.generation.llm_client import OpenAICompatibleClient
 
 logger = logging.getLogger(__name__)
@@ -77,7 +85,7 @@ class EvalRunSummary(BaseModel):
     deployment_label: str | None
     questions_evaluated: int
     avg_retrieval_precision: float | None
-    avg_retrieval_recall: float | None
+    avg_retrieval_ndcg: float | None
     avg_answer_similarity: float | None
     avg_faithfulness: float | None
 
@@ -261,7 +269,7 @@ async def export_run(run_id: _Id, session: DbSession):
         "expected_answer",
         "response",
         "retrieval_precision",
-        "retrieval_recall",
+        "retrieval_ndcg",
         "answer_similarity",
         "faithfulness",
     ]
@@ -277,7 +285,7 @@ async def export_run(run_id: _Id, session: DbSession):
                 "expected_answer": stored.expected_answer_snapshot,
                 "response": stored.response,
                 "retrieval_precision": scores.get("retrieval_precision"),
-                "retrieval_recall": scores.get("retrieval_recall"),
+                "retrieval_ndcg": scores.get("retrieval_ndcg"),
                 "answer_similarity": scores.get("answer_similarity"),
                 "faithfulness": scores.get("faithfulness"),
             }
@@ -440,13 +448,16 @@ def _build_runner(
 
     The runner calls the app over loopback on its own port, as scripts/run_eval.py does by
     default, so no traffic leaves the machine.
-    The judge LLM is built from the server's LLM settings but with the longer judge timeout,
+    The judge LLM uses the EVAL_JUDGE_* settings, falling back to the server's LLM settings, with the longer judge timeout,
     because a reasoning model can think for minutes and the server's request timeout is shorter.
     """
     judge = OpenAICompatibleClient(
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key.get_secret_value(),
-        model=settings.llm_model,
+        base_url=settings.eval_judge_base_url or settings.llm_base_url,
+        api_key=(
+            settings.eval_judge_api_key.get_secret_value()
+            or settings.llm_api_key.get_secret_value()
+        ),
+        model=settings.eval_judge_model or settings.llm_model,
         timeout=JUDGE_TIMEOUT_SECONDS,
         reasoning_effort=settings.eval_judge_reasoning_effort,
     )
@@ -551,3 +562,65 @@ async def cancel_run(run_id: _Id, session: DbSession):
     run.status = "cancelled"
     await session.commit()
     return {"status": "cancelled", "run_id": run_id}
+
+
+class PromptTestRequest(BaseModel):
+    """A candidate system prompt and a question to run it against."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    system_prompt: str = Field(min_length=1, max_length=20000)
+    question: str = Field(min_length=1, max_length=2000)
+
+
+def _run_prompt_test(request: Request, body: PromptTestRequest) -> dict[str, Any]:
+    """Retrieve for the question, then generate with the candidate prompt in place of the saved one.
+
+    Runs in a worker thread because retrieval and the LLM call block.
+    The pipeline has no prompt override, so this builds the messages with the default context
+    builder and swaps the system message. Nothing is saved and the active prompt is not touched.
+    """
+    query = request.app.state.pipelines.query
+    top_k = request.app.state.settings.retrieval_top_k
+    semaphore = acquire_llm_slot(request)
+    try:
+        chunks = query.search(body.question, top_k)
+        if not chunks:
+            return {
+                "answer": "No relevant information found in the book for this question.",
+                "sources": [],
+                "chunks": [],
+            }
+        messages = DefaultContextBuilder().build(body.question, chunks)
+        messages[0] = {"role": "system", "content": body.system_prompt}
+        # Uses private attributes pending a public ask_with_prompt() method on QueryPipeline.
+        answer = query._llm_client.chat(messages, max_tokens=query._max_tokens)  # type: ignore[attr-defined]
+    finally:
+        if semaphore is not None:
+            semaphore.release()
+
+    paths = [sc.chunk.metadata.get("source_path", "unknown") for sc in chunks]
+    return {
+        "answer": answer,
+        "sources": list(dict.fromkeys(paths)),
+        "chunks": [
+            {"rank": i, "source_path": path, "score": sc.score}
+            for i, (sc, path) in enumerate(zip(chunks, paths), 1)
+        ],
+    }
+
+
+@router.post(
+    "/prompt-test",
+    dependencies=[Depends(require_generation_ready), Depends(require_retrieval_ready)],
+    responses={503: {"description": "Retrieval or generation is not ready"}},
+)
+async def prompt_test(request: Request, body: PromptTestRequest):
+    """Answer a question with a candidate system prompt without saving anything."""
+    try:
+        return await asyncio.to_thread(_run_prompt_test, request, body)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Prompt test failed")
+        raise HTTPException(status_code=503, detail="generation failed")

@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.responses import Response as StarletteResponse
 
@@ -21,14 +21,17 @@ from api.middleware import AccessLogMiddleware, RateLimitMiddleware, RequestIDMi
 from api.routes.analytics import router as analytics_router
 from api.routes.ask import router as ask_router
 from api.routes.chat import router as chat_router
+from api.routes.debug import router as debug_router
 from api.routes.eval import router as eval_router
 from api.routes.feedback import router as feedback_router
+from api.routes.prompts import PROMPT_PATH, compute_prompt_hash
+from api.routes.prompts import router as prompts_router
 from api.routes.search import router as search_router
 from geoai_rag import __version__
 from geoai_rag.config import Settings, get_settings
 from geoai_rag.db.bootstrap import ensure_active_deployment
 from geoai_rag.db.engine import check_db_schema_status, create_db_engine, create_session_factory
-from geoai_rag.db.models import EvalRun
+from geoai_rag.db.models import EvalRun, PromptVersion
 from geoai_rag.factories import create_pipelines
 from geoai_rag.logging_config import configure_logging
 
@@ -37,15 +40,12 @@ logger = logging.getLogger(__name__)
 
 async def _sweep_orphaned_api_runs(
     session_factory: async_sessionmaker[AsyncSession],
-    stale_threshold_minutes: int = 10,
 ) -> None:
-    """Mark orphaned and stale eval runs as failed at startup.
+    """Mark API-triggered eval runs left in running/pending as failed.
 
-    API runs only exist in the server process.
-    Any still active at startup are orphans from a crash or restart.
+    Runs at startup only. API runs live in the server process, so any still
+    active at startup are orphans from a crash or restart.
     CLI runs are left alone because the CLI process may still be alive.
-    A second pass marks any run (API or CLI) as failed when its heartbeat
-    has not advanced within EVAL_STALE_THRESHOLD_MINUTES, indicating a stuck or crashed runner.
     """
     async with session_factory() as session:
         cursor = await session.execute(
@@ -58,7 +58,17 @@ async def _sweep_orphaned_api_runs(
             logger.info("Marked %d orphaned API eval run(s) as failed", count)
         await session.commit()
 
-        # Sweep stale runs (any source) with no heartbeat progress in stale_threshold_minutes minutes
+
+async def _sweep_stale_runs(
+    session_factory: async_sessionmaker[AsyncSession],
+    stale_threshold_minutes: int = 10,
+) -> None:
+    """Mark any eval run as failed when its heartbeat has gone stale.
+
+    A run whose heartbeat has not advanced within the threshold is likely stuck or crashed.
+    Runs without a heartbeat (old runs, pre-migration) are left alone.
+    """
+    async with session_factory() as session:
         stale_threshold = datetime.now(UTC) - timedelta(minutes=stale_threshold_minutes)
         stale_cursor = await session.execute(
             update(EvalRun)
@@ -102,16 +112,52 @@ async def _auto_load_eval_sets(
         logger.debug("pyyaml not installed; skipping eval set auto-load")
 
 
+async def _seed_system_prompt(
+    session_factory: async_sessionmaker[AsyncSession],
+    prompt_path: Path,
+) -> None:
+    """Make PROMPT.md the active prompt version when no version is active yet.
+
+    The row may already exist, because the deployment bootstrap stores the prompt by hash too.
+    In that case it is marked active instead of inserted again.
+    """
+    try:
+        async with session_factory() as session:
+            active = await session.execute(
+                select(PromptVersion.id).where(PromptVersion.is_active.is_(True)).limit(1)
+            )
+            if active.scalars().first() is not None:
+                return
+            content = prompt_path.read_text(encoding="utf-8").strip()
+            prompt_hash = compute_prompt_hash(content)
+            found = await session.execute(
+                select(PromptVersion).where(PromptVersion.hash == prompt_hash)
+            )
+            row = found.scalars().first()
+            if row is None:
+                session.add(
+                    PromptVersion(
+                        hash=prompt_hash, content=content, label="initial", is_active=True
+                    )
+                )
+            else:
+                row.is_active = True
+            await session.commit()
+            logger.info("Seeded system prompt from %s", prompt_path.name)
+    except Exception:
+        logger.warning("Failed to seed system prompt from %s", prompt_path, exc_info=True)
+
+
 async def _periodic_stale_sweep(
     session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
 ) -> None:
-    """Background task: sweep stale eval runs at the configured interval."""
+    """Background task: periodically sweep stale eval runs (heartbeat-only, not API orphans)."""
     interval = settings.eval_stale_threshold_minutes * 60
     while True:
         await asyncio.sleep(interval)
         try:
-            await _sweep_orphaned_api_runs(
+            await _sweep_stale_runs(
                 session_factory,
                 stale_threshold_minutes=settings.eval_stale_threshold_minutes,
             )
@@ -180,12 +226,14 @@ async def lifespan(app: FastAPI):
                 if result is not None:
                     app.state.active_deployment_id, app.state.active_index_run_id = result
 
-        await _sweep_orphaned_api_runs(
+        await _sweep_orphaned_api_runs(session_factory)
+        await _sweep_stale_runs(
             session_factory,
             stale_threshold_minutes=app.state.settings.eval_stale_threshold_minutes,
         )
 
         await _auto_load_eval_sets(session_factory, app.state.settings)
+        await _seed_system_prompt(session_factory, PROMPT_PATH)
 
         sweep_task = asyncio.create_task(_periodic_stale_sweep(session_factory, app.state.settings))
 
@@ -253,13 +301,36 @@ class PipelineConfig(BaseModel):
     rrf_k: int
     llm_provider: str
     llm_model: str
+    llm_max_tokens: int
     eval_stale_threshold_minutes: int
+    system_prompt_hash: str
+    system_prompt_id: int | None
+
+
+async def _active_prompt_identity() -> tuple[str, int | None]:
+    """Return the active prompt's hash and id, or ("unknown", None) when unavailable."""
+    factory = getattr(app.state, "db_session_factory", None)
+    if factory is None:
+        return "unknown", None
+    try:
+        async with factory() as session:
+            result = await session.execute(
+                select(PromptVersion).where(PromptVersion.is_active.is_(True))
+            )
+            active = result.scalars().first()
+    except Exception:
+        logger.warning("Could not read the active system prompt", exc_info=True)
+        return "unknown", None
+    if active is None:
+        return "unknown", None
+    return active.hash, active.id
 
 
 @app.get("/config", response_model=PipelineConfig, dependencies=[Depends(require_admin_token)])
 async def pipeline_config():
     """Return the active retrieval and generation configuration to an admin."""
     s = get_settings()
+    prompt_hash, prompt_id = await _active_prompt_identity()
     return PipelineConfig(
         retrieval_strategy=s.retrieval_strategy,
         retrieval_top_k=s.retrieval_top_k,
@@ -269,7 +340,10 @@ async def pipeline_config():
         rrf_k=s.rrf_k,
         llm_provider=s.llm_provider,
         llm_model=s.llm_model,
+        llm_max_tokens=s.llm_max_tokens,
         eval_stale_threshold_minutes=s.eval_stale_threshold_minutes,
+        system_prompt_hash=prompt_hash,
+        system_prompt_id=prompt_id,
     )
 
 
@@ -286,6 +360,8 @@ app.include_router(search_router)
 app.include_router(feedback_router)
 app.include_router(analytics_router)
 app.include_router(eval_router, prefix="/eval")
+app.include_router(prompts_router, prefix="/prompts")
+app.include_router(debug_router, prefix="/debug")
 
 # --- Static file mounts (catch-all book mount must be last) ---
 

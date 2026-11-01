@@ -119,7 +119,7 @@
 }
 
 .eval-checkbox-item span {
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .eval-hint {
@@ -291,4 +291,60 @@
   .sparkline-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* Action buttons. The base class is shared by the evaluation, prompt lab and inspector tabs. */
+
+.eval-btn {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 3px;
+  background: var(--bg2);
+  color: var(--tx);
+  cursor: pointer;
+}
+
+.eval-btn:hover {
+  background: var(--bd);
+}
+
+.eval-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--ac);
+  color: #fff;
+  border-color: var(--ac);
+}
+
+.btn-primary:hover {
+  background: var(--ac);
+  opacity: 0.9;
+}
+
+.btn-success {
+  background: var(--gd);
+  color: #fff;
+  border-color: var(--gd);
+}
+
+.btn-success:hover {
+  background: var(--gd);
+  opacity: 0.9;
+}
+
+.btn-danger-outline {
+  background: transparent;
+  color: var(--cr);
+  border-color: var(--cr);
+}
+
+.btn-danger-outline:hover {
+  background: var(--cr);
+  color: #fff;
 }

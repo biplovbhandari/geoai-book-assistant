@@ -169,7 +169,9 @@ def _create_reranker(config: Settings):
             raise ValueError(
                 "RERANKER_MODEL_NAME must not be empty when RERANKER_PROVIDER=local_cross_encoder"
             )
-        return LocalCrossEncoderReranker(model_name, config.hf_home)
+        return LocalCrossEncoderReranker(
+            model_name, config.hf_home, score_threshold=config.reranker_score_threshold
+        )
     raise ValueError(f"Unknown reranker_provider: {config.reranker_provider}")
 
 
@@ -281,6 +283,7 @@ def create_pipelines(config: Settings) -> Pipelines:
             llm_client=llm_client,
             citation_builder=citation_builder,
             top_k=config.retrieval_top_k,
+            max_tokens=config.llm_max_tokens,
         ),
         vector_store=store,
         embedder=embedder,

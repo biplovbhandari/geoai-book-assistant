@@ -83,6 +83,9 @@ class EvalRun(TimestampMixin, Base):
         sa.DateTime(timezone=True), nullable=True
     )
     planned_question_ids: Mapped[list[int] | None] = mapped_column(JSONB, nullable=True)
+    system_prompt_id: Mapped[int | None] = mapped_column(
+        ForeignKey("prompt_versions.id"), nullable=True
+    )
 
     eval_set: Mapped["EvalSet"] = relationship(back_populates="runs")
     deployment: Mapped["Deployment"] = relationship(back_populates="eval_runs")
