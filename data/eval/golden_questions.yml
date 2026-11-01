@@ -18,8 +18,10 @@ questions:
       A good answer links the general definition to these remote sensing examples.
     expected_sources:
       - "book/03_Semantic_Segmentation"
-    tags: ["chapter-3", "segmentation", "core-concept", "content-notebook"]
-    notes: "The book has no standalone definition of semantic segmentation (chapter 3 consists of three applied lessons), so a good answer combines the general definition with the book's examples."
+      - "data/transcripts/l3Tv5UBlw9I.json"
+      - "data/transcripts/DnPosJ6IJ0Y.json"
+    tags: ["chapter-3", "segmentation", "core-concept", "cross-chapter", "content-notebook", "content-video"]
+    notes: "Broad cross-chapter question. The book has no standalone definition of semantic segmentation (chapter 3 consists of three applied lessons), so a good answer combines the general definition with the book's examples. Video transcripts contribute context about the applied lessons."
 
   - id: q002
     question: "how to do crop mapping using ML/AI?"
@@ -31,8 +33,9 @@ questions:
       Results are also checked against an independent validation dataset collected separately, which scores noticeably lower than the training and validation metrics, so independent validation is recommended.
     expected_sources:
       - "book/03_Semantic_Segmentation/01__Crop_Mapping"
-    tags: ["chapter-3", "crop-mapping", "known-truncation", "content-notebook", "content-pdf"]
-    notes: "Response has been observed to truncate mid-sentence"
+      - "data/transcripts/l3Tv5UBlw9I.json"
+    tags: ["chapter-3", "crop-mapping", "content-notebook", "content-pdf", "content-video"]
+    notes: "Truncation fixed in PR #76 (LLM_MAX_TOKENS=2048). Video transcript adds practical context about the workflow."
 
   - id: q003
     question: "how is ethics applied in applied geoai?"
@@ -43,8 +46,8 @@ questions:
       The chapter also covers practical challenges such as limited resources, diverse expectations and engagement overload, and illustrates the framework with applied case studies.
     expected_sources:
       - "book/11_Ethics"
-    tags: ["chapter-11", "ethics", "known-retrieval-miss", "known-citation-relevance", "content-text"]
-    notes: "Known retrieval miss: doesn't retrieve ch 11, cites generic sources"
+    tags: ["chapter-11", "ethics", "content-text"]
+    notes: "Retrieval miss resolved in PR #75 era - now scores 1.0 precision."
 
   - id: q004
     question: "Why does the Bhutan rice mapping chapter use Planet imagery instead of Sentinel-2?"
@@ -89,9 +92,10 @@ questions:
       For regions that are very different, such as Brazil, Europe or the United States, the model would likely need to be fine-tuned with local data, because the forest and deforestation patterns it has learned may not match.
       The Clay foundation model itself is sensor-agnostic and can ingest imagery from sources such as Sentinel, Planet or MODIS, but the task-specific segmentation model still has to be trained for the question being asked.
     expected_sources:
-      - "data/transcripts/DnPosJ6IJ0Y.json" # chapter 3.3 video
-    tags: ["chapter-3", "foundation-models", "deforestation", "transfer", "content-video"]
-    notes: "Video-only content: the geographic transfer caveat does not appear in the notebook or the slide deck."
+      - "book/03_Semantic_Segmentation/03__Clay_Deforestation_Segmentation_Model"
+      - "data/transcripts/DnPosJ6IJ0Y.json"
+    tags: ["chapter-3", "foundation-models", "deforestation", "transfer", "content-notebook", "content-video"]
+    notes: "The geographic transfer caveat appears mainly in the video. The notebook covers the model architecture and training. Both are legitimate sources for a complete answer."
 
   - id: q008
     question: "How does the book use deep learning to predict crop yield?"
@@ -142,8 +146,8 @@ questions:
     expected_sources:
       - "book/10_Future/02__Comprehensive_EOFM_Benchmarking"
       - "data/transcripts/c7_GxZ6apqY.json" # chapter 10.2 video
-    tags: ["chapter-10", "foundation-models", "wildfire", "benchmarking", "known-truncation", "content-notebook", "content-video"]
-    notes: "Response has been observed to cut off mid-sentence (listed under content quality issues in the roadmap)."
+    tags: ["chapter-10", "foundation-models", "wildfire", "benchmarking", "content-notebook", "content-video"]
+    notes: "Truncation fixed in PR #76 (LLM_MAX_TOKENS=2048)."
 
   - id: q012
     question: "What are the 12 steps for ethically co-developing GeoAI projects?"
@@ -166,7 +170,7 @@ questions:
     expected_sources:
       - "book/index.md"
     tags: ["front-matter", "audience", "control", "content-text"]
-    notes: "Positive control: the editors' introduction is the correct source here, unlike questions where it was cited over specific chapters."
+    notes: "Positive control: the editors' introduction is the correct source here. Precision stays low (0.12) because many chapter intros mention the audience; this is expected for a broad front-matter question."
 
   - id: q014
     question: "How does the book handle uncertainty in deep learning predictions?"
