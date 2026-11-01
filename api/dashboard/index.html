@@ -364,7 +364,7 @@
                                         <div v-if="!retrieval.isExpanded(c.rank)" class="retrieval-text-preview">{{ c.textPreview }}</div>
                                         <div v-else class="retrieval-text-full">{{ c.text }}</div>
                                     </td>
-                                    <td class="mono" style="text-align:right" :class="{ 'score-hi': c.score >= 0.7, 'score-md': c.score >= 0.4 && c.score < 0.7, 'score-lo': c.score < 0.4 }">{{ c.score.toFixed(3) }}</td>
+                                    <td class="mono" style="text-align:right">{{ c.score.toFixed(3) }}</td>
                                 </tr>
                             </tbody>
                         </table>

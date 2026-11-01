@@ -142,7 +142,7 @@ EVAL_JUDGE_REASONING_EFFORT=none
 # EVAL_JUDGE_API_KEY=ollama
 EVAL_DATA_DIR=data/eval
 EVAL_STALE_THRESHOLD_MINUTES=10
-# RERANKER_SCORE_THRESHOLD=0.05
+# RERANKER_SCORE_THRESHOLD: check your model's score range (raw logits vs probabilities)
 DATABASE_URL=postgresql+asyncpg://geoai:geoai@localhost:5432/geoai
 ADMIN_TOKEN=<generate with: python3 -c "import secrets; print(secrets.token_urlsafe(32))">
 EMBEDDING_DIMENSION=1024
@@ -174,7 +174,7 @@ EVAL_JUDGE_REASONING_EFFORT=none
 # EVAL_JUDGE_API_KEY=ollama
 EVAL_DATA_DIR=data/eval
 EVAL_STALE_THRESHOLD_MINUTES=10
-# RERANKER_SCORE_THRESHOLD=0.05
+# RERANKER_SCORE_THRESHOLD: check your model's score range (raw logits vs probabilities)
 DATABASE_URL=postgresql+asyncpg://geoai:geoai@postgres:5432/geoai
 ADMIN_TOKEN=<generate with: python3 -c "import secrets; print(secrets.token_urlsafe(32))">
 EMBEDDING_DIMENSION=1024
