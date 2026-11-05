@@ -39,6 +39,11 @@ class RecordingContext:
     scored_chunks: list[dict] = field(default_factory=list)
     retrieval_query: str = ""
     saw_done: bool = False
+    # Pipeline trace data. None when the pipeline did not supply it, in which case
+    # _build_trace_rows records the minimal summary data instead.
+    retrieval_trace: dict | None = None
+    generation_metadata: dict | None = None
+    context_messages: list | None = None
 
 
 def _filename_stem(source_path: str) -> str:
@@ -128,25 +133,59 @@ def _build_chunk_and_citation_rows(
 
 
 def _build_trace_rows(ctx: RecordingContext) -> list[dict]:
-    """Build the retrieval-stage and generation-stage InteractionTrace row values."""
+    """Build the retrieval, context, and generation InteractionTrace row values.
+
+    The retrieval and generation rows carry the enriched pipeline data when the context
+    holds it and fall back to the minimal summary otherwise. That fallback matches what was
+    recorded before the pipeline was instrumented, so old and new interactions read alike.
+    The context row is always written, with empty data when no messages reached the LLM.
+    """
+    if ctx.retrieval_trace:
+        retrieval_data = ctx.retrieval_trace
+    else:
+        retrieval_data = {
+            "chunk_count": len(ctx.scored_chunks),
+            "retrieval_query": ctx.retrieval_query,
+        }
+
+    context_data: dict[str, Any] = {}
+    if ctx.context_messages:
+        user_messages = sum(1 for m in ctx.context_messages if m.get("role") == "user")
+        context_data = {
+            "messages": ctx.context_messages,
+            # The current question is one user message, so the rest are history. This counts
+            # separate user messages, and DefaultContextBuilder embeds history inside its
+            # single user message, so the value is 0 for its output.
+            "history_turns": max(0, user_messages - 1),
+            "chunk_count": len(ctx.scored_chunks),
+        }
+
+    if ctx.generation_metadata:
+        generation_data = {**ctx.generation_metadata, "generation_ms": ctx.generation_wall_ms}
+    else:
+        generation_data = {
+            "token_event_count": ctx.token_event_count,
+            "model": ctx.model_name,
+        }
+
     return [
         {
             "interaction_id": ctx.interaction_id,
             "stage": "retrieval",
             "latency_ms": ctx.retrieval_ms,
-            "data": {
-                "chunk_count": len(ctx.scored_chunks),
-                "retrieval_query": ctx.retrieval_query,
-            },
+            "data": retrieval_data,
+        },
+        {
+            "interaction_id": ctx.interaction_id,
+            "stage": "context",
+            "latency_ms": 0,  # Context assembly is negligible, so it is not timed.
+            "data": context_data,
         },
         {
             "interaction_id": ctx.interaction_id,
             "stage": "generation",
             "latency_ms": ctx.generation_wall_ms,
-            "data": {
-                "token_event_count": ctx.token_event_count,
-                "model": ctx.model_name,
-            },
+            "data": generation_data,
         },
     ]
 
@@ -167,7 +206,7 @@ async def record_interaction(
     already been torn down. Within one transaction: upserts the conversation,
     backfills a ChunkRecord for any newly-cited chunk (so the citation
     foreign key always resolves), inserts the interaction, its per-chunk
-    citations, and its retrieval/generation traces, then commits.
+    citations, and its retrieval/context/generation traces, then commits.
 
     Never raises. Any failure -- database unavailable, a constraint
     violation, malformed scored-chunk data -- is logged and swallowed so a

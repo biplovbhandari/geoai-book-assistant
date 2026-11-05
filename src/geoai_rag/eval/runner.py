@@ -592,7 +592,7 @@ class EvalRunner:
                 The client's own error stays attached as the cause.
         """
         try:
-            reply = self._llm_client.chat(
+            result = self._llm_client.chat(
                 messages, temperature=JUDGE_TEMPERATURE, max_tokens=JUDGE_MAX_TOKENS
             )
         except RuntimeError as exc:
@@ -606,7 +606,7 @@ class EvalRunner:
             raise EvalRunnerError(
                 f"Judge LLM request failed ({type(exc).__name__}): {exc}"
             ) from exc
-        return reply.strip()
+        return result.text.strip()
 
     async def run(
         self,

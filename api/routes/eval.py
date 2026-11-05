@@ -584,28 +584,29 @@ def _run_prompt_test(request: Request, body: PromptTestRequest) -> dict[str, Any
     top_k = request.app.state.settings.retrieval_top_k
     semaphore = acquire_llm_slot(request)
     try:
-        chunks = query.search(body.question, top_k)
-        if not chunks:
+        search_result = query.search(body.question, top_k)
+        # Check .chunks, not search_result: a RetrievalResult is always truthy.
+        if not search_result.chunks:
             return {
                 "answer": "No relevant information found in the book for this question.",
                 "sources": [],
                 "chunks": [],
             }
-        messages = DefaultContextBuilder().build(body.question, chunks)
+        messages = DefaultContextBuilder().build(body.question, search_result.chunks)
         messages[0] = {"role": "system", "content": body.system_prompt}
         # Uses private attributes pending a public ask_with_prompt() method on QueryPipeline.
-        answer = query._llm_client.chat(messages, max_tokens=query._max_tokens)  # type: ignore[attr-defined]
+        gen_result = query._llm_client.chat(messages, max_tokens=query._max_tokens)  # type: ignore[attr-defined]
     finally:
         if semaphore is not None:
             semaphore.release()
 
-    paths = [sc.chunk.metadata.get("source_path", "unknown") for sc in chunks]
+    paths = [sc.chunk.metadata.get("source_path", "unknown") for sc in search_result.chunks]
     return {
-        "answer": answer,
+        "answer": gen_result.text,
         "sources": list(dict.fromkeys(paths)),
         "chunks": [
             {"rank": i, "source_path": path, "score": sc.score}
-            for i, (sc, path) in enumerate(zip(chunks, paths), 1)
+            for i, (sc, path) in enumerate(zip(search_result.chunks, paths), 1)
         ],
     }
 

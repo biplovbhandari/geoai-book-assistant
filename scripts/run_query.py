@@ -75,13 +75,14 @@ def main() -> int:
         return 1
 
     filters = _parse_filters(args.filters)
-    results = pipelines.query.search(args.question, args.top_k, filters)
+    result = pipelines.query.search(args.question, args.top_k, filters)
 
-    if not results:
+    # Check .chunks, not result: a RetrievalResult is always truthy.
+    if not result.chunks:
         print("No results found.")
         return 0
 
-    for i, scored in enumerate(results, 1):
+    for i, scored in enumerate(result.chunks, 1):
         chunk = scored.chunk
         section = chunk.metadata.get("section", "—")
         source = chunk.metadata.get("source_path", "—")

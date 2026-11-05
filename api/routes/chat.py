@@ -145,6 +145,11 @@ def chat(request: Request, body: ChatRequest):
         ctx.retrieval_query = pipeline_ctx.get("retrieval_query", "")
         ctx.retrieval_ms = pipeline_ctx.get("retrieval_ms", 0)
         ctx.generation_wall_ms = pipeline_ctx.get("generation_wall_ms", 0)
+        # These keys are absent when no chunks were found (generation skipped) or when the stream
+        # reported no metadata. None makes the recorder fall back to its minimal row data.
+        ctx.retrieval_trace = pipeline_ctx.get("retrieval_trace")
+        ctx.generation_metadata = pipeline_ctx.get("generation_metadata")
+        ctx.context_messages = pipeline_ctx.get("context_messages")
 
     async def _cleanup():
         """Release the LLM semaphore and persist the interaction. Never raises.
