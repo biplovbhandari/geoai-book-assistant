@@ -11,6 +11,8 @@
     <link rel="stylesheet" href="styles/eval.css">
     <link rel="stylesheet" href="styles/prompt-lab.css">
     <link rel="stylesheet" href="styles/retrieval.css">
+    <link rel="stylesheet" href="styles/trace.css">
+    <link rel="stylesheet" href="styles/trace-viz.css">
 </head>
 <body>
     <p id="boot-error" class="empty err" role="alert" hidden></p>
@@ -20,8 +22,8 @@
         Questions, titles, labels, answers and source paths come from public chat users or from the model, so
         render them only through {{ }} or a :attribute binding, which escape their values. Never use v-html in
         this template.
-        Each view's state lives in a namespace: `analytics.*`, `eval.*`, `promptLab.*` and `retrieval.*`. Only the shared formatting helpers
-        and the sign-in state are top-level names.
+        Each view's state lives in a namespace: `analytics.*`, `eval.*`, `promptLab.*`, `retrieval.*` and `trace.*`. Only the shared
+        formatting helpers and the sign-in state are top-level names.
     -->
     <div id="app" v-cloak>
         <template v-if="!authenticated">
@@ -48,6 +50,7 @@
                 <button type="button" class="tab" :class="{ on: tab === 'eval' }" :aria-pressed="tab === 'eval'" @click="tab = 'eval'">Evaluation</button>
                 <button type="button" class="tab" :class="{ on: tab === 'prompt-lab' }" :aria-pressed="tab === 'prompt-lab'" @click="tab = 'prompt-lab'">Prompt Lab</button>
                 <button type="button" class="tab" :class="{ on: tab === 'retrieval' }" :aria-pressed="tab === 'retrieval'" @click="tab = 'retrieval'">Retrieval Inspector</button>
+                <button type="button" class="tab" :class="{ on: tab === 'trace' }" :aria-pressed="tab === 'trace'" @click="tab = 'trace'">Pipeline Trace</button>
             </nav>
 
             <div v-show="tab === 'analytics'">
@@ -355,6 +358,19 @@
                         <span v-if="retrieval.results.precision != null"> &middot; precision={{ retrieval.results.precision.toFixed(3) }}</span>
                         <span v-if="retrieval.results.ndcg != null"> &middot; ndcg={{ retrieval.results.ndcg.toFixed(3) }}</span>
                     </div>
+                    <div class="retrieval-stages" v-if="retrieval.results.stages && retrieval.results.stages.length">
+                        <table class="retrieval-stages-table">
+                            <thead><tr><th>Stage</th><th class="num">Latency</th><th class="num">In</th><th class="num">Out</th></tr></thead>
+                            <tbody>
+                                <tr v-for="s in retrieval.results.stages" :key="s.stage">
+                                    <td>{{ s.stage }}</td>
+                                    <td class="num mono">{{ s.latency_ms }}ms</td>
+                                    <td class="num mono">{{ s.input_count }}</td>
+                                    <td class="num mono">{{ s.output_count }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                     <div class="tbl-scroll">
                         <table>
                             <thead><tr><th>#</th><th>Source</th><th>Text</th><th style="text-align:right">Score</th></tr></thead>
@@ -370,6 +386,259 @@
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <div v-show="tab === 'trace'">
+                <div class="trace-modes">
+                    <button type="button" :class="{ on: trace.mode === 'history' }" @click="trace.mode = 'history'">History</button>
+                    <button type="button" :class="{ on: trace.mode === 'live' }" @click="trace.mode = 'live'">Live</button>
+                </div>
+
+                <p class="empty err" role="alert" v-if="trace.error">{{ trace.error }}</p>
+
+                <div v-show="trace.mode === 'history'">
+                    <div class="trace-list" v-if="trace.interactions.length">
+                        <div v-for="group in trace.groupedInteractions" :key="group.conversationId"
+                             class="trace-conv-group" :class="{ 'multi-turn': group.turnCount > 1 }">
+                            <div v-for="(item, turnIdx) in group.turns" :key="item.id"
+                                 class="trace-list-item"
+                                 :class="{ selected: trace.selectedId === item.id, 'trace-followup': turnIdx > 0 }"
+                                 @click="trace.fetchTrace(item.id)">
+                                <span v-if="turnIdx > 0" class="trace-turn-label">Turn {{ turnIdx + 1 }}</span>
+                                <div class="trace-list-q" :title="item.question">{{ item.question }}</div>
+                                <span class="trace-enriched-badge" v-if="item.has_enriched_trace">enriched</span>
+                                <span class="trace-list-date">{{ formatDate(item.created_at) }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="empty" v-if="!trace.loading && !trace.error && !trace.interactions.length">No interactions recorded.</p>
+                    <div class="trace-pagination" v-if="trace.interactionsTotal > 20">
+                        <button type="button" class="eval-btn" :disabled="trace.interactionsPage === 0" @click="trace.fetchInteractions(trace.interactionsPage - 20)">Prev</button>
+                        <span>{{ trace.interactionsPage + 1 }}-{{ Math.min(trace.interactionsPage + 20, trace.interactionsTotal) }} of {{ trace.interactionsTotal }}</span>
+                        <button type="button" class="eval-btn" :disabled="trace.interactionsPage + 20 >= trace.interactionsTotal" @click="trace.fetchInteractions(trace.interactionsPage + 20)">Next</button>
+                    </div>
+                </div>
+
+                <div v-show="trace.mode === 'live'">
+                    <div class="trace-live-controls">
+                        <input type="text" v-model="trace.liveQuestion" placeholder="Enter a question to trace..." class="trace-live-input" @keyup.enter="trace.runLiveTrace()">
+                        <button type="button" class="eval-btn btn-primary" @click="trace.runLiveTrace()" :disabled="trace.loading || !trace.liveQuestion">{{ trace.loading ? 'Running...' : 'Run Trace' }}</button>
+                    </div>
+                </div>
+
+                <p class="empty" v-if="trace.loading">Loading...</p>
+
+                <div v-if="trace.hasTrace" class="trace-detail">
+                    <div class="trace-question" v-if="trace.activeQuestion">
+                        "{{ trace.activeQuestion }}"
+                        <span class="trace-question-date" v-if="trace.mode === 'history' && trace.traceDetail">{{ formatDate(trace.traceDetail.interaction.created_at) }}</span>
+                        <span class="trace-enriched-badge" v-if="trace.mode === 'history' && trace.traceDetail && trace.traceDetail.has_enriched_trace" style="margin-left:6px">enriched</span>
+                    </div>
+
+                    <div class="trace-stats-bar">
+                        <div class="trace-stat-tile" v-for="tile in trace.statTiles" :key="tile.label">
+                            <div class="trace-stat-value" :class="{ good: tile.good }">{{ tile.value }}</div>
+                            <div class="trace-stat-label">{{ tile.label }}</div>
+                        </div>
+                    </div>
+
+                    <details open class="trace-section" v-if="trace.activeTrace.retrieval">
+                        <summary>
+                            <span class="trace-section-title">Retrieval</span>
+                            <span class="trace-section-metric">{{ trace.retrievalMetric }}</span>
+                        </summary>
+                        <div class="trace-section-body">
+                            <div class="trace-waterfall-bar" v-if="trace.waterfallSegments.length">
+                                <div v-for="seg in trace.waterfallSegments" :key="seg.stage"
+                                     class="trace-wf-seg" :class="seg.cssClass"
+                                     :style="{ width: seg.pct + '%', minWidth: seg.latency > 0 ? '24px' : '0' }"
+                                     :title="seg.stage + ': ' + seg.latency + 'ms'">
+                                    <template v-if="seg.pct > 8">{{ seg.latency }}ms</template>
+                                </div>
+                            </div>
+                            <div class="trace-wf-legend" v-if="trace.waterfallSegments.length">
+                                <div v-for="seg in trace.waterfallSegments" :key="seg.stage" class="trace-wf-legend-item">
+                                    <div class="trace-wf-swatch" :class="seg.cssClass"></div>
+                                    {{ seg.stage }}
+                                </div>
+                            </div>
+
+                            <table v-if="trace.activeTrace.retrieval.stages && trace.activeTrace.retrieval.stages.length" class="trace-detail-table">
+                                <thead>
+                                    <tr><th>Stage</th><th>Config</th><th>Latency</th><th>In</th><th>Out</th><th>Score range</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="s in trace.activeTrace.retrieval.stages" :key="s.stage">
+                                        <td>{{ s.stage }}</td>
+                                        <td>{{ trace.formatStageConfig(s.config) }}</td>
+                                        <td>{{ s.latency_ms }}ms</td>
+                                        <td>{{ s.input_count }}</td>
+                                        <td>{{ s.output_count }}</td>
+                                        <td>{{ trace.formatScoreRange(s.chunk_scores) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <template v-if="trace.chunkJourney.rows.length">
+                                <div class="trace-journey-label">Chunk Journey</div>
+                                <div class="trace-journey-wrapper">
+                                    <table class="trace-journey-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Chunk</th>
+                                                <th v-for="stage in trace.chunkJourney.stageNames" :key="stage">
+                                                    {{ stage }}<br><span class="trace-stage-meta">{{ trace.stageScoreType(stage) }}</span>
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="(row, ri) in trace.chunkJourney.rows" :key="row.chunkId"
+                                                :class="{ survived: row.survived, eliminated: !row.survived }">
+                                                <td>
+                                                    <span class="trace-rank-badge" v-if="row.survived">{{ ri + 1 }}</span>
+                                                    <span class="trace-chunk-name">{{ row.displayName }}</span>
+                                                </td>
+                                                <td v-for="stage in trace.chunkJourney.stageNames" :key="stage">
+                                                    <span v-if="row.scores[stage] != null"
+                                                          class="trace-score-cell" :class="trace.scoreIntensity(row.scores[stage], stage)">
+                                                        {{ trace.formatChunkScore(row.scores[stage]) }}
+                                                    </span>
+                                                    <span v-else class="trace-empty-cell">-</span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </template>
+
+                            <div v-if="trace.activeTrace.retrieval.retrieval_query" style="margin-top:8px">
+                                <span class="sub">Query:</span> {{ trace.activeTrace.retrieval.retrieval_query }}
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="trace-section" v-if="trace.activeTrace.context">
+                        <summary>
+                            <span class="trace-section-title">Context Assembly</span>
+                            <span class="trace-section-metric">{{ trace.contextMetric }}</span>
+                        </summary>
+                        <div class="trace-section-body">
+                            <ul class="trace-kv-list">
+                                <li v-if="trace.activeTrace.context.system_prompt_id != null">
+                                    <span class="trace-kv-key">System prompt</span>
+                                    <span class="trace-kv-val">ID {{ trace.activeTrace.context.system_prompt_id }}</span>
+                                </li>
+                                <li>
+                                    <span class="trace-kv-key">Chunks included</span>
+                                    <span class="trace-kv-val">{{ trace.activeTrace.context.chunk_count != null ? trace.activeTrace.context.chunk_count : '-' }}</span>
+                                </li>
+                                <li>
+                                    <span class="trace-kv-key">Prior history</span>
+                                    <span class="trace-kv-val">{{ trace.formatHistory(trace.activeTrace.context.history_turns) }}</span>
+                                </li>
+                                <li v-if="trace.activeTrace.generation && trace.activeTrace.generation.prompt_tokens != null">
+                                    <span class="trace-kv-key">Est. prompt tokens</span>
+                                    <span class="trace-kv-val">~{{ trace.activeTrace.generation.prompt_tokens }}</span>
+                                </li>
+                            </ul>
+                            <template v-if="trace.activeTrace.context.messages && trace.activeTrace.context.messages.length">
+                                <button type="button" class="trace-messages-toggle" @click="trace.messagesExpanded = !trace.messagesExpanded" style="margin-top:8px">{{ trace.messagesExpanded ? 'Hide' : 'Show' }} messages ({{ trace.activeTrace.context.messages.length }})</button>
+                                <div v-if="trace.messagesExpanded" class="trace-messages">
+                                    <div v-for="(msg, mi) in trace.activeTrace.context.messages" :key="mi" class="trace-message">
+                                        <span class="trace-message-role">{{ msg.role }}</span> {{ typeof msg.content === 'string' ? msg.content : '[structured]' }}
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </details>
+
+                    <details class="trace-section" v-if="trace.activeTrace.generation">
+                        <summary>
+                            <span class="trace-section-title">Generation</span>
+                            <span class="trace-section-metric">{{ trace.generationMetric }}</span>
+                        </summary>
+                        <div class="trace-section-body">
+                            <ul class="trace-kv-list">
+                                <li v-if="trace.activeTrace.generation.model">
+                                    <span class="trace-kv-key">Model</span>
+                                    <span class="trace-kv-val">{{ trace.activeTrace.generation.model }}</span>
+                                </li>
+                                <li v-if="trace.activeTrace.generation.prompt_tokens != null">
+                                    <span class="trace-kv-key">Prompt tokens</span>
+                                    <span class="trace-kv-val">{{ trace.activeTrace.generation.prompt_tokens }}</span>
+                                </li>
+                                <li v-if="trace.activeTrace.generation.completion_tokens != null">
+                                    <span class="trace-kv-key">Completion tokens</span>
+                                    <span class="trace-kv-val">{{ trace.activeTrace.generation.completion_tokens }}</span>
+                                </li>
+                                <li v-if="trace.activeTrace.generation.reasoning_tokens != null">
+                                    <span class="trace-kv-key">Reasoning tokens</span>
+                                    <span class="trace-kv-val">{{ trace.activeTrace.generation.reasoning_tokens }}</span>
+                                </li>
+                                <li v-if="trace.activeTrace.generation.finish_reason">
+                                    <span class="trace-kv-key">Finish reason</span>
+                                    <span class="trace-kv-val">{{ trace.activeTrace.generation.finish_reason }}</span>
+                                </li>
+                                <li v-if="trace.activeTrace.generation.generation_ms != null">
+                                    <span class="trace-kv-key">Generation time</span>
+                                    <span class="trace-kv-val">{{ trace.activeTrace.generation.generation_ms }}ms</span>
+                                </li>
+                            </ul>
+                            <div v-if="trace.activeTrace.generation.reasoning_content" style="margin-top:8px">
+                                <span class="sub">Reasoning:</span>
+                                <div class="trace-reasoning-text">{{ trace.activeTrace.generation.reasoning_content }}</div>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="trace-section">
+                        <summary>
+                            <span class="trace-section-title">Response</span>
+                            <span class="trace-section-metric">{{ trace.responseMetric }}</span>
+                        </summary>
+                        <div class="trace-section-body">
+                            <div class="trace-response-text" v-if="trace.activeResponse">{{ trace.activeResponse }}</div>
+                            <div class="sub" v-else>No response.</div>
+                        </div>
+                    </details>
+
+                    <details class="trace-section" v-if="trace.activeCitations.length">
+                        <summary>
+                            <span class="trace-section-title">Citations</span>
+                            <span class="trace-section-metric">{{ trace.citationsMetric }}</span>
+                        </summary>
+                        <div class="trace-section-body">
+                            <ul class="trace-citation-list">
+                                <li v-for="cit in trace.activeCitations" :key="cit.citation_index">
+                                    <span class="trace-cite-num">{{ cit.citation_index }}.</span>
+                                    <span class="trace-cite-path">{{ cit.source_path }}</span>
+                                    <span class="trace-cite-score">{{ formatScore(cit.score) }}</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </details>
+
+                    <details class="trace-section" v-if="trace.groundednessResult">
+                        <summary>
+                            <span class="trace-section-title">Groundedness</span>
+                            <span class="trace-section-metric">{{ trace.groundednessMetric }}</span>
+                        </summary>
+                        <div class="trace-section-body">
+                            <ul class="trace-claims">
+                                <li v-for="(claim, ci) in trace.groundednessResult.claims" :key="ci" :class="claim.verdict">
+                                    "{{ claim.claim }}"
+                                    <span class="trace-claim-verdict">{{ claim.verdict }}</span>
+                                    <span class="trace-claim-source" v-if="claim.source_path">{{ claim.source_path }}<template v-if="claim.evidence"> - {{ claim.evidence }}</template></span>
+                                    <span class="trace-claim-source" v-else-if="claim.explanation">{{ claim.explanation }}</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </details>
+
+                    <div class="trace-groundedness">
+                        <button type="button" class="btn groundedness-btn" @click="trace.checkGroundedness()" :disabled="trace.groundednessLoading || !trace.canCheckGroundedness">{{ trace.groundednessLoading ? 'Checking...' : 'Check Groundedness' }}</button>
                     </div>
                 </div>
             </div>

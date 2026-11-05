@@ -1,5 +1,12 @@
-from conftest import FakeCitationBuilder, FakeContextBuilder, FakeStrategy, make_scored_chunk
+from conftest import (
+    FakeCitationBuilder,
+    FakeContextBuilder,
+    FakeStrategy,
+    make_scored_chunk,
+    make_streaming_result,
+)
 
+from geoai_rag.models.generation_result import GenerationResult
 from geoai_rag.query import QueryPipeline
 
 
@@ -7,14 +14,12 @@ class FakeStreamingLLMClient:
     """Fake LLM that yields multiple tokens."""
 
     def chat(self, messages, temperature=0.3, max_tokens=1024):
-        """Return a canned answer string."""
-        return "U-Net is a CNN [1]."
+        """Return a canned answer."""
+        return GenerationResult(text="U-Net is a CNN [1].")
 
     def chat_stream(self, messages, temperature=0.3, max_tokens=1024):
         """Yield answer as three separate tokens."""
-        yield "U-Net "
-        yield "is "
-        yield "a CNN [1]."
+        return make_streaming_result(["U-Net ", "is ", "a CNN [1]."])
 
 
 class FakeEmptyStreamLLMClient:
@@ -22,12 +27,11 @@ class FakeEmptyStreamLLMClient:
 
     def chat(self, messages, temperature=0.3, max_tokens=1024):
         """Return an empty answer."""
-        return ""
+        return GenerationResult(text="")
 
     def chat_stream(self, messages, temperature=0.3, max_tokens=1024):
         """Yield empty and whitespace-only tokens."""
-        yield ""
-        yield "  "
+        return make_streaming_result(["", "  "])
 
 
 class TestAskStream:
@@ -139,9 +143,11 @@ class TestOpenAIStreamingAdapter:
         chunk_with_content = MagicMock()
         chunk_with_content.choices = [MagicMock()]
         chunk_with_content.choices[0].delta.content = "Hello"
+        chunk_with_content.choices[0].finish_reason = None
 
         chunk_empty_delta = MagicMock()
         chunk_empty_delta.choices = [MagicMock()]
+        chunk_empty_delta.choices[0].finish_reason = None
         chunk_empty_delta.choices[0].delta.content = None
 
         chunk_no_choices = MagicMock()
@@ -149,7 +155,14 @@ class TestOpenAIStreamingAdapter:
 
         chunk_final = MagicMock()
         chunk_final.choices = [MagicMock()]
+        chunk_final.choices[0].finish_reason = None
         chunk_final.choices[0].delta.content = " world"
+
+        # MagicMock attributes are truthy and non-primitive, which would fail
+        # GenerationResult validation, so pin usage and model explicitly.
+        for c in (chunk_with_content, chunk_empty_delta, chunk_no_choices, chunk_final):
+            c.usage = None
+            c.model = "test-model"
 
         fake_response = [chunk_with_content, chunk_empty_delta, chunk_no_choices, chunk_final]
 

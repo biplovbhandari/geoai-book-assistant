@@ -31,6 +31,7 @@ Exact request/response shapes live in the code (Pydantic models); this document 
 | Deployments | List, create, activate (immutable snapshots, atomic switch) |
 | Prompts | List, detail, create (content-addressed SHA-256 dedup) |
 | Evaluation | Eval sets CRUD, eval questions CRUD, run evaluation, view results |
+| Debug / Pipeline Trace | `POST /debug/query` - retrieval with per-stage scores (Retrieval Inspector); `GET /debug/interactions` - paginated interaction history; `GET /debug/traces/{id}` - full trace for one interaction; `POST /debug/trace` - live full-pipeline trace (no recording); `POST /debug/groundedness` - claim-level groundedness check |
 | Index Runs | List history (read-only, indexing triggered via CLI) |
 | Metrics | `GET /metrics` — Prometheus exposition format (`text/plain`). Not in OpenAPI schema. |
 

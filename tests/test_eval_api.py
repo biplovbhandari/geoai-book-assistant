@@ -21,7 +21,6 @@ from api.routes import eval as eval_routes
 from geoai_rag.config import Settings
 from geoai_rag.db.models import EvalQuestion, EvalResult, EvalRun, EvalSet, VEvalRunSummary
 from geoai_rag.eval.runner import (
-    JUDGE_TIMEOUT_SECONDS,
     EvalRunnerError,
     NoMatchingQuestionsError,
     StartedRun,
@@ -700,19 +699,21 @@ def test_post_builds_a_runner_that_calls_this_server_and_judges_with_its_llm(
         runner_args.update(kwargs)
         return FakeRunner()
 
-    monkeypatch.setattr(eval_routes, "OpenAICompatibleClient", make_judge)
+    captured_settings: list[Any] = []
+
+    def fake_create_judge(s, default_model=None):
+        """Record settings and return the sentinel judge object."""
+        captured_settings.append(s)
+        return judge
+
+    monkeypatch.setattr(eval_routes, "create_judge_client", fake_create_judge)
     monkeypatch.setattr(eval_routes, "EvalRunner", make_runner)
     write_eval_set(eval_dir, "golden.yml", "golden-qa-v1")
 
     assert client.post("/eval/runs").status_code == 202
 
-    assert judge_args == {
-        "base_url": "http://llm.test/v1",
-        "api_key": "llm-secret",
-        "model": "judge-model",
-        "timeout": JUDGE_TIMEOUT_SECONDS,
-        "reasoning_effort": "none",
-    }
+    assert len(captured_settings) == 1
+    assert captured_settings[0] is settings
     assert runner_args == {
         "base_url": "http://localhost:8321",
         "llm_client": judge,

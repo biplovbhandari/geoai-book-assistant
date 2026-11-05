@@ -32,9 +32,9 @@ def ask(request: Request, body: AskRequest):
 
     llm_semaphore = acquire_llm_slot(request)
     try:
-        result = pipelines.query.ask(body.question, body.filters)
-        retrieval_seconds.observe(result.retrieval_ms / 1000)
-        llm_generation_seconds.observe(result.generation_ms / 1000)
+        pipeline_result = pipelines.query.ask(body.question, body.filters)
+        retrieval_seconds.observe(pipeline_result.answer.retrieval_ms / 1000)
+        llm_generation_seconds.observe(pipeline_result.answer.generation_ms / 1000)
     except Exception:
         logger.exception("Generation failed")
         raise HTTPException(status_code=503, detail="generation failed")
@@ -42,4 +42,5 @@ def ask(request: Request, body: AskRequest):
         if llm_semaphore is not None:
             llm_semaphore.release()
 
-    return result
+    # Return only the Answer: the trace data on PipelineResult is not part of the widget contract.
+    return pipeline_result.answer

@@ -1,0 +1,441 @@
+/* Pipeline Trace tab -- base layout: modes, list, live input, sections, messages.
+   Visualization styles (waterfall, journey, claims) are in trace-viz.css. */
+
+/* Trace-specific color tokens for the waterfall bar, score intensities, and claims. */
+
+:root {
+    --tr-dense: #1a73e8;
+    --tr-sparse: #1e8e3e;
+    --tr-fusion: #e8710a;
+    --tr-rerank: #9334e6;
+    --tr-score-1: #e8f0fe;
+    --tr-score-2: #a8c7fa;
+    --tr-score-3: #1a73e8;
+    --tr-survived: #1e8e3e;
+    --tr-claim-bg: #e6f4ea;
+    --tr-claim-bd: #1e8e3e;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --tr-dense: #8ab4f8;
+        --tr-sparse: #81c995;
+        --tr-fusion: #fdd663;
+        --tr-rerank: #c58af9;
+        --tr-score-1: #1e2a3a;
+        --tr-score-2: #2d4a7a;
+        --tr-score-3: #8ab4f8;
+        --tr-survived: #81c995;
+        --tr-claim-bg: #1e3a2f;
+        --tr-claim-bd: #81c995;
+    }
+}
+
+:root[data-theme="dark"] {
+    --tr-dense: #8ab4f8;
+    --tr-sparse: #81c995;
+    --tr-fusion: #fdd663;
+    --tr-rerank: #c58af9;
+    --tr-score-1: #1e2a3a;
+    --tr-score-2: #2d4a7a;
+    --tr-score-3: #8ab4f8;
+    --tr-survived: #81c995;
+    --tr-claim-bg: #1e3a2f;
+    --tr-claim-bd: #81c995;
+}
+
+/* Mode toggle: History | Live */
+
+.trace-modes {
+    display: inline-flex;
+    overflow: hidden;
+    border: 1px solid var(--bd);
+    border-radius: 3px;
+    margin-bottom: 12px;
+}
+
+.trace-modes button {
+    padding: 4px 14px;
+    border: none;
+    background: var(--bg);
+    color: var(--tx2);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.trace-modes button + button {
+    border-left: 1px solid var(--bd);
+}
+
+.trace-modes button.on {
+    background: var(--bg2);
+    color: var(--tx);
+    font-weight: 600;
+}
+
+/* Interaction list in History mode */
+
+.trace-list {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--bd);
+    border-radius: 3px;
+    margin-bottom: 8px;
+}
+
+.trace-list-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--bg2);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.trace-list-item:last-child {
+    border-bottom: none;
+}
+
+.trace-list-item:hover {
+    background: var(--bg2);
+}
+
+.trace-list-item.selected {
+    background: var(--bg2);
+    border-left: 3px solid var(--ac);
+    padding-left: 7px;
+}
+
+/* Conversation groups */
+
+.trace-conv-group.multi-turn {
+    border-left: 3px solid var(--ac);
+    margin-bottom: 4px;
+}
+
+.trace-followup {
+    padding-left: 24px;
+}
+
+.trace-turn-label {
+    flex: none;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--tx2);
+    text-transform: uppercase;
+    margin-right: 6px;
+}
+
+.trace-list-q {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+.trace-enriched-badge {
+    flex: none;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--gd);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.trace-list-date {
+    flex: none;
+    color: var(--tx2);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* Pagination controls */
+
+.trace-pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 12px;
+    color: var(--tx2);
+}
+
+/* Live mode input */
+
+.trace-live-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.trace-live-input {
+    flex: 1;
+    max-width: 640px;
+    padding: 5px 8px;
+    border: 1px solid var(--bd);
+    border-radius: 3px;
+    background: var(--bg);
+    color: var(--tx);
+    font: inherit;
+    font-size: 13px;
+}
+
+.trace-live-input:focus {
+    outline: none;
+    border-color: var(--ac);
+}
+
+/* Interaction header: one-line summary above the trace viewer in history mode. */
+
+.trace-interaction-header {
+    padding: 8px 0;
+    color: var(--tx2);
+    font-size: 12px;
+}
+
+/* Trace viewer: collapsible stage sections (old accordion, kept for graceful degradation) */
+
+.trace-detail {
+    margin-top: 12px;
+    border-top: 1px solid var(--bd);
+}
+
+.trace-stage {
+    border-bottom: 1px solid var(--bd);
+}
+
+.trace-stage:last-child {
+    border-bottom: none;
+}
+
+.trace-stage-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    user-select: none;
+}
+
+.trace-stage-header::before {
+    flex: none;
+    width: 14px;
+    color: var(--tx2);
+    content: "\25B8";
+}
+
+.trace-stage.open .trace-stage-header::before {
+    content: "\25BE";
+}
+
+.trace-stage-header:hover {
+    color: var(--ac);
+}
+
+.trace-stage-latency {
+    color: var(--tx2);
+    font-size: 11px;
+    font-family: var(--mono);
+    font-weight: 400;
+}
+
+.trace-stage-body {
+    padding: 0 0 12px 16px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--tx);
+    overflow-x: auto;
+}
+
+.trace-stage-body strong {
+    color: var(--tx2);
+    font-weight: 600;
+    font-size: 11px;
+}
+
+/* Sub-tables within the trace viewer (retrieval stages and citations) */
+
+.trace-stages-table,
+.trace-citations-table {
+    width: auto;
+    margin-bottom: 8px;
+}
+
+.trace-stages-table th,
+.trace-citations-table th {
+    padding: 3px 12px 3px 0;
+    font-size: 11px;
+}
+
+.trace-stages-table td,
+.trace-citations-table td {
+    padding: 2px 12px 2px 0;
+    font-size: 12px;
+    border-bottom: none;
+}
+
+/* Context messages: toggle link and message rows */
+
+.trace-messages-toggle {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--ac);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.trace-messages-toggle:hover {
+    text-decoration: underline;
+}
+
+.trace-messages {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.trace-message {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--bg2);
+    font-size: 11px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+    white-space: pre-wrap;
+}
+
+.trace-message:last-child {
+    border-bottom: none;
+}
+
+.trace-message-role {
+    font-weight: 600;
+    color: var(--tx2);
+    text-transform: uppercase;
+    font-size: 10px;
+}
+
+.trace-citation-source {
+    max-width: 320px;
+    font-size: 11px;
+    word-break: break-all;
+}
+
+/* Reasoning content box */
+
+.trace-reasoning-text {
+    margin-top: 4px;
+    padding: 6px 8px;
+    border: 1px solid var(--bd);
+    border-radius: 3px;
+    background: var(--bg2);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* Response text block */
+
+.trace-response-text {
+    max-width: 80ch;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+}
+
+/* Groundedness check section (base button and summary) */
+
+.trace-groundedness {
+    padding: 12px 0;
+}
+
+.groundedness-btn {
+    margin-bottom: 10px;
+}
+
+.groundedness-summary {
+    padding: 6px 0 10px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.claim {
+    padding: 6px 10px;
+    border-left: 3px solid var(--bd);
+    margin-bottom: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.claim.supported {
+    border-left-color: var(--gd);
+}
+
+.claim.unsupported {
+    border-left-color: var(--cr);
+}
+
+.claim-verdict {
+    margin-bottom: 2px;
+}
+
+.claim-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.claim-badge.supported {
+    background: var(--gd);
+    color: #fff;
+}
+
+.claim-badge.unsupported {
+    background: var(--cr);
+    color: #fff;
+}
+
+.claim-text {
+    font-weight: 500;
+}
+
+.claim-detail {
+    margin-top: 2px;
+}
+
+/* Retrieval Inspector: stage summary above the chunk table */
+
+.retrieval-stages {
+    padding: 8px 0;
+}
+
+.retrieval-stages-table {
+    width: auto;
+}
+
+.retrieval-stages-table th {
+    padding: 3px 12px 3px 0;
+    font-size: 11px;
+}
+
+.retrieval-stages-table td {
+    padding: 2px 12px 2px 0;
+    font-size: 12px;
+    border-bottom: none;
+}

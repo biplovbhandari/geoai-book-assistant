@@ -9,7 +9,7 @@ Detailed component interfaces, adapters, and data models. For the high-level ove
 | Module | When | Triggered by | Interface |
 |---|---|---|---|
 | **IndexingPipeline** | Offline (CPU default, GPU optional) | `scripts/index_book.py` | `index_source(actual_path, source_path) → IndexResult` |
-| **QueryPipeline** | Online (per-request) | FastAPI `/ask`, `/search`, `/chat` | `ask(question, filters, *, history) → Answer` / `ask_stream(question, *, history, filters) → Iterator[dict]` / `search(question, top_k, filters) → list[ScoredChunk]` |
+| **QueryPipeline** | Online (per-request) | FastAPI `/ask`, `/search`, `/chat` | `ask(question, filters, *, history) → PipelineResult` / `ask_stream(question, *, history, filters) → Iterator[dict]` / `search(question, top_k, filters) → RetrievalResult` |
 
 Shared adapters (Embedder, VectorStore) injected into both.
 
@@ -79,7 +79,7 @@ graph LR
   end
 
   Q --> D_Embed
-  D_Rerank --> Out["list[ScoredChunk]"]
+  D_Rerank --> Out["RetrievalResult"]
   Rerank -.->|"hybrid: direct"| Out
   Rerank -.->|"parent_child only"| Expand
   Expand -.-> Out
@@ -104,13 +104,13 @@ classDiagram
   }
 
   class QueryPipeline {
-    +ask(question, filters, *, history) Answer
+    +ask(question, filters, *, history) PipelineResult
     +ask_stream(question, *, history, filters) Iterator~dict~
-    +search(question, top_k, filters) list~ScoredChunk~
+    +search(question, top_k, filters) RetrievalResult
   }
 
   class RetrievalStrategy {
-    +retrieve(question, top_k, filters) list~ScoredChunk~
+    +retrieve(question, top_k, filters) RetrievalResult
   }
 
   IndexingPipeline *-- Parser
@@ -151,7 +151,7 @@ classDiagram
   }
 
   class RetrievalStrategy {
-    +retrieve(question, top_k, filters) list~ScoredChunk~
+    +retrieve(question, top_k, filters) RetrievalResult
   }
 
   VectorStore <|-- QdrantStore
@@ -182,8 +182,8 @@ classDiagram
   }
 
   class LLMClient {
-    +chat(messages, temperature, max_tokens) str
-    +chat_stream(messages, temperature, max_tokens) Iterator~str~
+    +chat(messages, temperature, max_tokens) GenerationResult
+    +chat_stream(messages, temperature, max_tokens) StreamingGenerationResult
   }
 
   class ContextBuilder {
@@ -254,6 +254,51 @@ Answer:
   citations: list[Citation]
 ```
 
+### RetrievalResult
+
+```
+RetrievalResult:
+  chunks: list[ScoredChunk]
+  trace: RetrievalTrace                      # per-stage trace of how the chunks were produced
+```
+
+### RetrievalTrace
+
+```
+RetrievalTrace:
+  stages: list[StageTrace]
+  retrieval_query: str
+  total_latency_ms: int
+```
+
+### StageTrace
+
+```
+StageTrace:
+  stage: str                                 # e.g. "dense", "sparse", "fusion", "reranking"
+  config: dict
+  latency_ms: int
+  input_count: int
+  output_count: int
+  chunk_scores: list[ChunkStageScore]
+```
+
+### GenerationResult
+
+```
+GenerationResult:
+  text: str                                  # LLM response
+  prompt_tokens, completion_tokens, finish_reason, model, reasoning_content, reasoning_tokens
+```
+
+### PipelineResult
+
+```
+PipelineResult:
+  answer: Answer
+  retrieval_trace, generation, context_messages, system_prompt_id
+```
+
 ### Citation
 
 ```
@@ -291,11 +336,11 @@ Pipelines:
 ```
 # POST /ask
 Request:  { question: str, filters?: { chapter?: str, source_type?: str, content_type?: str } }
-Response: Answer
+Response: PipelineResult
 
 # POST /search
 Request:  { question: str, top_k?: int, filters?: { chapter?: str, source_type?: str, content_type?: str } }
-Response: { chunks: list[ScoredChunk] }
+Response: { chunks: list[ScoredChunk] }  # from RetrievalResult.chunks
 
 # POST /chat (SSE streaming)
 Request:  { question: str, history?: list[{role: str, content: str}], filters?: {...} }

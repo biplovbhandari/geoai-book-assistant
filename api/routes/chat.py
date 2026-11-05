@@ -10,12 +10,14 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
 from starlette.background import BackgroundTask
 
 from api.dependencies import acquire_llm_slot, require_generation_ready, require_retrieval_ready
 from api.metrics import llm_generation_seconds, retrieval_seconds
 from api.recording import RecordingContext, record_interaction
 from api.routes.validators import QuestionFiltersMixin
+from geoai_rag.db.models.infrastructure import PromptVersion
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +106,7 @@ def chat(request: Request, body: ChatRequest):
     pipeline_ctx: dict = {}  # populated by ask_stream via _recording_ctx
 
     history_dicts = [{"role": m.role, "content": m.content} for m in body.history]
+    ctx.history_turn_count = len(history_dicts)
 
     llm_semaphore = acquire_llm_slot(request)
 
@@ -145,6 +148,28 @@ def chat(request: Request, body: ChatRequest):
         ctx.retrieval_query = pipeline_ctx.get("retrieval_query", "")
         ctx.retrieval_ms = pipeline_ctx.get("retrieval_ms", 0)
         ctx.generation_wall_ms = pipeline_ctx.get("generation_wall_ms", 0)
+        # These keys are absent when no chunks were found (generation skipped) or when the stream
+        # reported no metadata. None makes the recorder fall back to its minimal row data.
+        ctx.retrieval_trace = pipeline_ctx.get("retrieval_trace")
+        ctx.generation_metadata = pipeline_ctx.get("generation_metadata")
+        ctx.context_messages = pipeline_ctx.get("context_messages")
+
+    async def _active_prompt_id() -> int | None:
+        """Return the active system prompt's id, or None when it cannot be read.
+
+        Recording must never fail because of this lookup, so any error degrades to None.
+        """
+        if session_factory is None:
+            return None
+        try:
+            async with session_factory() as session:
+                result = await session.execute(
+                    select(PromptVersion.id).where(PromptVersion.is_active.is_(True))
+                )
+                return result.scalars().first()
+        except Exception:
+            logger.warning("Could not read the active system prompt id", exc_info=True)
+            return None
 
     async def _cleanup():
         """Release the LLM semaphore and persist the interaction. Never raises.
@@ -170,6 +195,7 @@ def chat(request: Request, body: ChatRequest):
             assert session_factory is not None
             assert deployment_id is not None
             assert index_run_id is not None
+            ctx.system_prompt_id = await _active_prompt_id()
             embedding = await asyncio.to_thread(embedder.embed_query, ctx.retrieval_query)
             await record_interaction(
                 session_factory,

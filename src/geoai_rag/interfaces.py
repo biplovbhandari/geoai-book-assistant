@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
 from typing import Any, Protocol, runtime_checkable
 
 from geoai_rag.models.chunk import Chunk
 from geoai_rag.models.citation import Citation
+from geoai_rag.models.generation_result import GenerationResult, StreamingGenerationResult
+from geoai_rag.models.retrieval_result import RetrievalResult
 from geoai_rag.models.scored_chunk import ScoredChunk
 
 
@@ -158,7 +159,7 @@ class RetrievalStrategy(Protocol):
         question: str,
         top_k: int,
         filters: dict[str, Any] | None = None,
-    ) -> list[ScoredChunk]:
+    ) -> RetrievalResult:
         """Retrieve ranked chunks for a natural language question.
 
         Args:
@@ -167,7 +168,7 @@ class RetrievalStrategy(Protocol):
             filters: Optional metadata filters.
 
         Returns:
-            Ranked list of scored chunks.
+            Ranked chunks together with the per-stage trace of how they were produced.
         """
         ...
 
@@ -204,8 +205,8 @@ class LLMClient(Protocol):
         messages: list[dict[str, str]],
         temperature: float = 0.3,
         max_tokens: int = 1024,
-    ) -> str:
-        """Generate a text response from a chat message list.
+    ) -> GenerationResult:
+        """Generate a response from a chat message list.
 
         Args:
             messages: List of message dicts with 'role' and 'content' keys.
@@ -213,7 +214,7 @@ class LLMClient(Protocol):
             max_tokens: Maximum tokens in the generated response.
 
         Returns:
-            The generated text content.
+            The generated text plus token counts, finish reason, and model name.
         """
         ...
 
@@ -222,16 +223,18 @@ class LLMClient(Protocol):
         messages: list[dict[str, str]],
         temperature: float = 0.3,
         max_tokens: int = 1024,
-    ) -> Iterator[str]:
-        """Yield text chunks as they are generated.
+    ) -> StreamingGenerationResult:
+        """Stream a response as text chunks, with metadata available after iteration.
 
         Args:
             messages: List of message dicts with 'role' and 'content' keys.
             temperature: Sampling temperature (0.0 = deterministic).
             max_tokens: Maximum tokens in the generated response.
 
-        Yields:
-            Text chunks as they are produced by the model.
+        Returns:
+            An iterable of text chunks as the model produces them. Once fully
+            iterated, its ``metadata`` attribute holds token counts, finish
+            reason, and model name.
         """
         ...
 

@@ -2,7 +2,11 @@
 import { isRecord } from '../shared/format.js';
 import { apiPost, isAuthError, describeError } from '../shared/api.js';
 
-/** True for a /debug/query reply: an object holding the chunk list. */
+/**
+ * True for a /debug/query reply: an object holding the chunk list and optional stage traces.
+ * The stages field carries per-stage retrieval data (latency, input/output counts, chunk scores)
+ * when the pipeline provides it. The template shows a stages summary when the field is present.
+ */
 function isInspectResult(value) {
     return isRecord(value) && Array.isArray(value.chunks);
 }

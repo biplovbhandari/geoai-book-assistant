@@ -34,8 +34,8 @@ from api.dependencies import (
 )
 from geoai_rag.config import Settings, get_settings
 from geoai_rag.db.models import EvalQuestion, EvalResult, EvalRun, EvalSet, VEvalRunSummary
+from geoai_rag.eval.judge_client import create_judge_client
 from geoai_rag.eval.runner import (
-    JUDGE_TIMEOUT_SECONDS,
     EvalRunner,
     EvalRunnerError,
     NoMatchingQuestionsError,
@@ -43,7 +43,6 @@ from geoai_rag.eval.runner import (
     load_eval_set,
 )
 from geoai_rag.generation.context_builder import DefaultContextBuilder
-from geoai_rag.generation.llm_client import OpenAICompatibleClient
 
 logger = logging.getLogger(__name__)
 
@@ -451,16 +450,7 @@ def _build_runner(
     The judge LLM uses the EVAL_JUDGE_* settings, falling back to the server's LLM settings, with the longer judge timeout,
     because a reasoning model can think for minutes and the server's request timeout is shorter.
     """
-    judge = OpenAICompatibleClient(
-        base_url=settings.eval_judge_base_url or settings.llm_base_url,
-        api_key=(
-            settings.eval_judge_api_key.get_secret_value()
-            or settings.llm_api_key.get_secret_value()
-        ),
-        model=settings.eval_judge_model or settings.llm_model,
-        timeout=JUDGE_TIMEOUT_SECONDS,
-        reasoning_effort=settings.eval_judge_reasoning_effort,
-    )
+    judge = create_judge_client(settings)
     return EvalRunner(
         base_url=settings.local_api_url,
         llm_client=judge,
@@ -584,28 +574,29 @@ def _run_prompt_test(request: Request, body: PromptTestRequest) -> dict[str, Any
     top_k = request.app.state.settings.retrieval_top_k
     semaphore = acquire_llm_slot(request)
     try:
-        chunks = query.search(body.question, top_k)
-        if not chunks:
+        search_result = query.search(body.question, top_k)
+        # Check .chunks, not search_result: a RetrievalResult is always truthy.
+        if not search_result.chunks:
             return {
                 "answer": "No relevant information found in the book for this question.",
                 "sources": [],
                 "chunks": [],
             }
-        messages = DefaultContextBuilder().build(body.question, chunks)
+        messages = DefaultContextBuilder().build(body.question, search_result.chunks)
         messages[0] = {"role": "system", "content": body.system_prompt}
         # Uses private attributes pending a public ask_with_prompt() method on QueryPipeline.
-        answer = query._llm_client.chat(messages, max_tokens=query._max_tokens)  # type: ignore[attr-defined]
+        gen_result = query._llm_client.chat(messages, max_tokens=query._max_tokens)  # type: ignore[attr-defined]
     finally:
         if semaphore is not None:
             semaphore.release()
 
-    paths = [sc.chunk.metadata.get("source_path", "unknown") for sc in chunks]
+    paths = [sc.chunk.metadata.get("source_path", "unknown") for sc in search_result.chunks]
     return {
-        "answer": answer,
+        "answer": gen_result.text,
         "sources": list(dict.fromkeys(paths)),
         "chunks": [
             {"rank": i, "source_path": path, "score": sc.score}
-            for i, (sc, path) in enumerate(zip(chunks, paths), 1)
+            for i, (sc, path) in enumerate(zip(search_result.chunks, paths), 1)
         ],
     }
 

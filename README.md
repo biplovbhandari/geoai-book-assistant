@@ -246,7 +246,7 @@ geoai-book-assistant/
 ├── src/geoai_rag/           # Python package (RAG logic)
 │   ├── config.py                # Pydantic BaseSettings, env-driven
 │   ├── interfaces.py            # Shared protocols (Embedder, SparseEmbedder, VectorStore, ...)
-│   ├── models/                  # Chunk, ScoredChunk, Document, Answer, Citation, IndexResult
+│   ├── models/                  # Chunk, ScoredChunk, Document, Answer, Citation, IndexResult, RetrievalResult, GenerationResult, PipelineResult
 │   ├── db/                      # SQLAlchemy ORM models, engine factory, session management
 │   ├── indexing/                # Parsers, chunkers, embedder, sparse embedder, vector store, pipeline
 │   ├── retrieval/               # DenseStrategy, HybridStrategy (RRF), NoOpReranker, LocalCrossEncoderReranker
@@ -262,7 +262,7 @@ geoai-book-assistant/
 │   ├── middleware.py            # Request ID, access logging, per-IP rate limiting
 │   ├── recording.py             # Chat interaction recording (BackgroundTask)
 │   ├── metrics.py               # Custom Prometheus metrics (histograms, counters)
-│   └── routes/                  # /search, /ask, /chat, /feedback, /analytics endpoints
+│   └── routes/                  # /search, /ask, /chat, /feedback, /analytics, /debug, /prompts endpoints
 ├── scripts/
 │   ├── index_book.py            # CLI: index book + PDFs + transcripts into Qdrant
 │   ├── transcribe.py            # CLI: download + transcribe YouTube lectures

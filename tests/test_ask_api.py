@@ -1,7 +1,14 @@
-from conftest import create_test_client, make_scored_chunk
+from conftest import (
+    create_test_client,
+    make_retrieval_result,
+    make_scored_chunk,
+    make_streaming_result,
+)
 
 from geoai_rag.models.answer import Answer
 from geoai_rag.models.citation import Citation
+from geoai_rag.models.generation_result import GenerationResult
+from geoai_rag.models.pipeline_result import PipelineResult
 
 
 def _make_answer(chunks=None):
@@ -23,6 +30,16 @@ def _make_answer(chunks=None):
     )
 
 
+def _make_pipeline_result(chunks=None):
+    """Wrap a canned Answer in the PipelineResult that QueryPipeline.ask() returns."""
+    answer = _make_answer(chunks)
+    return PipelineResult(
+        answer=answer,
+        retrieval_trace=make_retrieval_result(answer.sources).trace,
+        generation=GenerationResult(text=answer.answer),
+    )
+
+
 class _FakeQueryPipeline:
     generation_ready = True
 
@@ -36,7 +53,7 @@ class _FakeQueryPipeline:
         return self._ask_result
 
     def chat_stream(self, messages, temperature=0.3, max_tokens=1024):
-        yield "test"
+        return make_streaming_result(["test"])
 
 
 class _FakeFailingQueryPipeline(_FakeQueryPipeline):
@@ -47,7 +64,7 @@ class _FakeFailingQueryPipeline(_FakeQueryPipeline):
 def _make_fake_pipelines(ask_result=None, count=100):
     from api.dependencies import Pipelines
 
-    query = _FakeQueryPipeline(ask_result or _make_answer())
+    query = _FakeQueryPipeline(ask_result or _make_pipeline_result())
     store = type("FakeStore", (), {"count": lambda self: count})()
 
     return Pipelines(query=query, vector_store=store)  # type: ignore[arg-type]
@@ -70,7 +87,7 @@ class TestAsk:
     def test_llm_failure_returns_503(self, monkeypatch):
         from api.dependencies import Pipelines
 
-        query = _FakeFailingQueryPipeline(_make_answer())
+        query = _FakeFailingQueryPipeline(_make_pipeline_result())
         store = type("FakeStore", (), {"count": lambda self: 100})()
         pipelines = Pipelines(query=query, vector_store=store)  # type: ignore[arg-type]
         client = create_test_client(monkeypatch, pipelines)

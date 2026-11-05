@@ -104,7 +104,7 @@ class TestBuildChunkAndCitationRows:
 
 
 class TestBuildTraceRows:
-    def test_produces_two_trace_rows(self):
+    def test_produces_three_trace_rows(self):
         ctx = RecordingContext(
             interaction_id=uuid.uuid4(),
             conversation_id=uuid.uuid4(),
@@ -121,12 +121,14 @@ class TestBuildTraceRows:
         )
         traces = _build_trace_rows(ctx)
 
-        assert len(traces) == 2
+        assert len(traces) == 3
         assert traces[0]["stage"] == "retrieval"
         assert traces[0]["latency_ms"] == 42
-        assert traces[1]["stage"] == "generation"
-        assert traces[1]["latency_ms"] == 100
-        assert traces[1]["data"]["model"] == "test-model"
+        assert traces[1]["stage"] == "context"
+        assert traces[1]["data"] == {}, "no messages reached the LLM, so context data is empty"
+        assert traces[2]["stage"] == "generation"
+        assert traces[2]["latency_ms"] == 100
+        assert traces[2]["data"]["model"] == "test-model"
 
 
 class TestRecordingContext:

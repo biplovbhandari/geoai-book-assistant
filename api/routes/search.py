@@ -32,16 +32,20 @@ class SearchResponse(BaseModel):
     "/search", response_model=SearchResponse, dependencies=[Depends(require_retrieval_ready)]
 )
 def search(request: Request, body: SearchRequest):
+    """Return the ranked chunks retrieved for a question, without generating an answer.
+
+    Returns 503 if retrieval is not ready or the search fails.
+    """
     pipelines = request.app.state.pipelines
 
     top_k = body.top_k if body.top_k is not None else request.app.state.settings.retrieval_top_k
 
     try:
-        results = pipelines.query.search(body.question, top_k, body.filters)
+        result = pipelines.query.search(body.question, top_k, body.filters)
     except Exception:
         logger.exception("Search failed")
         raise HTTPException(status_code=503, detail="retrieval not ready")
 
     search_request_count.inc()
-    retrieval_chunk_count.observe(len(results))
-    return SearchResponse(chunks=results)
+    retrieval_chunk_count.observe(len(result.chunks))
+    return SearchResponse(chunks=result.chunks)
