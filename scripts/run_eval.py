@@ -39,7 +39,7 @@ from geoai_rag.eval.runner import (
     format_scores,
     preview_eval_set,
 )
-from geoai_rag.generation.llm_client import OpenAICompatibleClient
+from geoai_rag.interfaces import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ def _eval_files(eval_set: Path | None) -> list[Path]:
     return files
 
 
-def _build_judge_client(settings: Settings, llm_model: str) -> OpenAICompatibleClient:
+def _build_judge_client(settings: Settings, llm_model: str) -> LLMClient:
     """Build the judge client, falling back to the server's own LLM model when none is set.
 
     Going through OpenAICompatibleClient keeps the judge provider-agnostic: LLM_BASE_URL can
@@ -163,7 +163,7 @@ async def _run_all(
     files: list[Path],
     args: argparse.Namespace,
     settings: Settings,
-    judge_client: OpenAICompatibleClient,
+    judge_client: LLMClient,
 ) -> int:
     """Run every eval set file against the database, then print the overall summary."""
     engine = create_db_engine(settings.database_url.get_secret_value())
@@ -193,7 +193,7 @@ async def _run_all(
 async def _resume_run(
     args: argparse.Namespace,
     settings: Settings,
-    judge_client: OpenAICompatibleClient,
+    judge_client: LLMClient,
 ) -> int:
     """Resume a failed or cancelled eval run by its ID."""
     engine = create_db_engine(settings.database_url.get_secret_value())

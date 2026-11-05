@@ -39,8 +39,7 @@ from geoai_rag.db.models import (
     PromptVersion,
 )
 from geoai_rag.eval.groundedness import build_groundedness_prompt, parse_groundedness_response
-from geoai_rag.eval.judge_client import create_judge_client
-from geoai_rag.eval.runner import JUDGE_MAX_TOKENS, JUDGE_TEMPERATURE
+from geoai_rag.eval.judge_client import create_judge_client, judge_chat
 from geoai_rag.eval.scorer import retrieval_ndcg, retrieval_precision
 from geoai_rag.models.pipeline_result import PipelineResult
 
@@ -499,11 +498,10 @@ def _ask_judge(request: Request, messages: list[dict[str, str]]) -> str:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     semaphore = acquire_llm_slot(request)
     try:
-        reply = judge.chat(messages, temperature=JUDGE_TEMPERATURE, max_tokens=JUDGE_MAX_TOKENS)
+        return judge_chat(judge, messages)
     finally:
         if semaphore is not None:
             semaphore.release()
-    return reply.text
 
 
 @router.post(

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from geoai_rag.config import Settings
-from geoai_rag.eval.runner import JUDGE_TIMEOUT_SECONDS
+from geoai_rag.eval.runner import JUDGE_MAX_TOKENS, JUDGE_TEMPERATURE, JUDGE_TIMEOUT_SECONDS
 from geoai_rag.generation.llm_client import OpenAICompatibleClient
+from geoai_rag.interfaces import LLMClient
 
 
 def create_judge_client(
@@ -38,3 +39,20 @@ def create_judge_client(
         timeout=JUDGE_TIMEOUT_SECONDS,
         reasoning_effort=settings.eval_judge_reasoning_effort,
     )
+
+
+def judge_chat(client: LLMClient, messages: list[dict[str, str]]) -> str:
+    """Send a judge prompt and return the text response.
+
+    Uses the standard judge temperature and max tokens. Callers handle errors raised by the
+    underlying LLM client.
+
+    Args:
+        client: The judge LLM client.
+        messages: Chat messages, each with a role and a content.
+
+    Returns:
+        The reply text, unstripped.
+    """
+    result = client.chat(messages, temperature=JUDGE_TEMPERATURE, max_tokens=JUDGE_MAX_TOKENS)
+    return result.text

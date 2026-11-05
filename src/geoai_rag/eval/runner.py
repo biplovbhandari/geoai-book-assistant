@@ -591,10 +591,11 @@ class EvalRunner:
             EvalRunnerError: If the judge LLM call fails or the reply holds no text.
                 The client's own error stays attached as the cause.
         """
+        # Imported here because judge_client imports this module's constants at load time.
+        from geoai_rag.eval.judge_client import judge_chat
+
         try:
-            result = self._llm_client.chat(
-                messages, temperature=JUDGE_TEMPERATURE, max_tokens=JUDGE_MAX_TOKENS
-            )
+            text = judge_chat(self._llm_client, messages)
         except RuntimeError as exc:
             # OpenAICompatibleClient raises RuntimeError when the reply has no choices or no text.
             raise EvalRunnerError(
@@ -606,7 +607,7 @@ class EvalRunner:
             raise EvalRunnerError(
                 f"Judge LLM request failed ({type(exc).__name__}): {exc}"
             ) from exc
-        return result.text.strip()
+        return text.strip()
 
     async def run(
         self,
