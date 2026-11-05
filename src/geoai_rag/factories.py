@@ -185,13 +185,16 @@ def _create_retrieval_strategy(config: Settings, embedder, store, reranker):
     """
     from geoai_rag.retrieval.strategies import DenseStrategy, HybridStrategy
 
+    # A NoOp reranker runs no model, so the trace must not name the configured cross-encoder.
+    reranker_model_name = "" if config.reranker_provider == "noop" else config.reranker_model_name
+
     if config.retrieval_strategy == "dense":
         return DenseStrategy(
             embedder,
             store,
             reranker,
             embedder_model_name=config.embedding_model_name,
-            reranker_model_name=config.reranker_model_name,
+            reranker_model_name=reranker_model_name,
         )
     if config.retrieval_strategy == "hybrid":
         return HybridStrategy(
@@ -201,7 +204,7 @@ def _create_retrieval_strategy(config: Settings, embedder, store, reranker):
             rrf_k=config.rrf_k,
             embedder_model_name=config.embedding_model_name,
             sparse_model_name=config.sparse_model_name,
-            reranker_model_name=config.reranker_model_name,
+            reranker_model_name=reranker_model_name,
         )
     raise ValueError(f"Unknown retrieval_strategy: {config.retrieval_strategy}")
 

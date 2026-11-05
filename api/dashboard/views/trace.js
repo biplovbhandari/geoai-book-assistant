@@ -5,6 +5,9 @@ import { apiGet, apiPost, isAuthError, describeError } from '../shared/api.js';
 /** How many interactions to load per page of the history list. */
 const PAGE_SIZE = 20;
 
+/** Timeout for the LLM-backed trace and groundedness calls, which can run for a minute or more. */
+const LLM_TIMEOUT_MS = 120000;
+
 /** True for a GET /debug/interactions response: an object with an interactions array and total. */
 function isInteractionList(value) {
     return isRecord(value) && Array.isArray(value.interactions);
@@ -219,6 +222,7 @@ export function useTrace(session, onAuthError) {
                 session.token,
                 { question: text },
                 isLiveTrace,
+                LLM_TIMEOUT_MS,
             );
             if (sessionId !== session.id) return;
             liveResult.value = data;
@@ -274,6 +278,7 @@ export function useTrace(session, onAuthError) {
                 session.token,
                 { response_text: responseText, chunks },
                 isGroundednessResult,
+                LLM_TIMEOUT_MS,
             );
             if (sessionId !== session.id) return;
             groundednessResult.value = data;
@@ -310,7 +315,23 @@ export function useTrace(session, onAuthError) {
         messagesExpanded.value = false;
     }
 
+    /** Formats a retrieval stage's config dict as "key=value" pairs, or '-' when it is empty. */
+    function formatStageConfig(config) {
+        if (!isRecord(config)) return '-';
+        const pairs = Object.entries(config).map(([key, value]) => `${key}=${value}`);
+        return pairs.length ? pairs.join(', ') : '-';
+    }
+
+    /** Formats the min-max of a stage's chunk scores, or '-' when the stage has none. */
+    function formatScoreRange(chunkScores) {
+        if (!Array.isArray(chunkScores)) return '-';
+        const scores = chunkScores.map((c) => c && c.score).filter((v) => typeof v === 'number');
+        if (!scores.length) return '-';
+        return `${Math.min(...scores).toFixed(3)} - ${Math.max(...scores).toFixed(3)}`;
+    }
+
     return {
+        formatStageConfig, formatScoreRange,
         mode, interactions, interactionsTotal, interactionsPage,
         selectedId, traceDetail, liveQuestion, liveResult,
         loading, error, groundednessResult, groundednessLoading,

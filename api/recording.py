@@ -44,6 +44,10 @@ class RecordingContext:
     retrieval_trace: dict | None = None
     generation_metadata: dict | None = None
     context_messages: list | None = None
+    # Number of prior conversation turns sent in the request. The context builder embeds history
+    # inside one user message, so it cannot be recovered from context_messages.
+    history_turn_count: int = 0
+    system_prompt_id: int | None = None
 
 
 def _filename_stem(source_path: str) -> str:
@@ -150,13 +154,10 @@ def _build_trace_rows(ctx: RecordingContext) -> list[dict]:
 
     context_data: dict[str, Any] = {}
     if ctx.context_messages:
-        user_messages = sum(1 for m in ctx.context_messages if m.get("role") == "user")
         context_data = {
             "messages": ctx.context_messages,
-            # The current question is one user message, so the rest are history. This counts
-            # separate user messages, and DefaultContextBuilder embeds history inside its
-            # single user message, so the value is 0 for its output.
-            "history_turns": max(0, user_messages - 1),
+            "history_turns": ctx.history_turn_count,
+            "system_prompt_id": ctx.system_prompt_id,
             "chunk_count": len(ctx.scored_chunks),
         }
 

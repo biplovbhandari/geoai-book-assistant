@@ -450,13 +450,15 @@
                         <div class="trace-stage-body" v-show="trace.isStageExpanded('retrieval')">
                             <template v-if="trace.activeTrace.retrieval">
                                 <table v-if="trace.activeTrace.retrieval.stages && trace.activeTrace.retrieval.stages.length" class="trace-stages-table">
-                                    <thead><tr><th>Stage</th><th class="num">Latency</th><th class="num">In</th><th class="num">Out</th></tr></thead>
+                                    <thead><tr><th>Stage</th><th>Config</th><th class="num">Latency (ms)</th><th class="num">Chunks in</th><th class="num">Chunks out</th><th class="num">Score range</th></tr></thead>
                                     <tbody>
                                         <tr v-for="s in trace.activeTrace.retrieval.stages" :key="s.stage">
                                             <td>{{ s.stage }}</td>
-                                            <td class="num mono">{{ s.latency_ms }}ms</td>
+                                            <td class="mono">{{ trace.formatStageConfig(s.config) }}</td>
+                                            <td class="num mono">{{ s.latency_ms }}</td>
                                             <td class="num mono">{{ s.input_count }}</td>
                                             <td class="num mono">{{ s.output_count }}</td>
+                                            <td class="num mono">{{ trace.formatScoreRange(s.chunk_scores) }}</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -478,9 +480,9 @@
                                 <div><strong>History turns:</strong> {{ trace.activeTrace.context.history_turns != null ? trace.activeTrace.context.history_turns : '-' }}</div>
                                 <template v-if="trace.activeTrace.context.messages && trace.activeTrace.context.messages.length">
                                     <button type="button" class="trace-messages-toggle" @click="trace.messagesExpanded = !trace.messagesExpanded">{{ trace.messagesExpanded ? 'Hide' : 'Show' }} messages ({{ trace.activeTrace.context.messages.length }})</button>
-                                    <div v-if="trace.messagesExpanded">
+                                    <div v-if="trace.messagesExpanded" class="trace-messages">
                                         <div v-for="(msg, mi) in trace.activeTrace.context.messages" :key="mi" class="trace-message">
-                                            <span class="trace-message-role">{{ msg.role }}</span> {{ typeof msg.content === 'string' ? (msg.content.length > 300 ? msg.content.slice(0, 300) + '...' : msg.content) : '[structured]' }}
+                                            <span class="trace-message-role">{{ msg.role }}</span> {{ typeof msg.content === 'string' ? msg.content : '[structured]' }}
                                         </div>
                                     </div>
                                 </template>
@@ -531,7 +533,7 @@
                                 <tbody>
                                     <tr v-for="cit in trace.activeCitations" :key="cit.citation_index">
                                         <td class="mono">{{ cit.citation_index }}</td>
-                                        <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ cit.source_path }}</td>
+                                        <td class="trace-citation-source">{{ cit.source_path }}</td>
                                         <td class="num mono">{{ formatScore(cit.score) }}</td>
                                         <td class="sub">{{ cit.ranking_method || '-' }}</td>
                                     </tr>

@@ -59,13 +59,14 @@ export async function readErrorDetail(response) {
  * Sends one request with the Bearer token and returns the parsed JSON. apiGet and apiPost both go
  * through here, so the timeout, the error handling and the shape check live in one place.
  * `init` holds the fetch options that differ per method (method, body, extra headers).
+ * `timeoutMs` overrides the default timeout for slow, LLM-backed endpoints.
  */
-async function request(url, token, isValid, init) {
+async function request(url, token, isValid, init, timeoutMs = REQUEST_TIMEOUT_MS) {
     const response = await fetch(url, {
         ...init,
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}`, ...init.headers },
         cache: 'no-store',
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
         throw new ApiError(response.status, await readErrorDetail(response));
@@ -89,13 +90,14 @@ export function apiGet(url, token, isValid) {
 /**
  * POSTs `body` as JSON to one endpoint with the Bearer token and returns the parsed JSON reply.
  * Fails the same way as apiGet. The caller must not retry on its own: a POST is not safe to repeat.
+ * `timeoutMs` is optional and defaults to the shared request timeout.
  */
-export function apiPost(url, token, body, isValid) {
+export function apiPost(url, token, body, isValid, timeoutMs) {
     return request(url, token, isValid, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-    });
+    }, timeoutMs);
 }
 
 /** Turns a failed request into short text for the section that could not load. */

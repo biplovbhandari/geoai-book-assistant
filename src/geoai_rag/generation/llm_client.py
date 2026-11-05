@@ -100,6 +100,10 @@ class OpenAICompatibleClient:
         if not answer.strip():
             raise RuntimeError("LLM returned empty content")
         usage = response.usage
+        # Only some OpenAI-compatible backends report reasoning tokens; otherwise stays None.
+        reasoning_tokens = None
+        if usage and getattr(usage, "completion_tokens_details", None):
+            reasoning_tokens = getattr(usage.completion_tokens_details, "reasoning_tokens", None)
         return GenerationResult(
             text=answer,
             prompt_tokens=usage.prompt_tokens if usage else None,
@@ -107,6 +111,7 @@ class OpenAICompatibleClient:
             finish_reason=choice.finish_reason,
             model=response.model or self._model,
             reasoning_content=reasoning_content,
+            reasoning_tokens=reasoning_tokens,
         )
 
     def chat_stream(
