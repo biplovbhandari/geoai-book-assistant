@@ -50,7 +50,7 @@ def test_dense_strategy_retrieves_and_reranks():
     store = FakeStore(canned)
     strategy = DenseStrategy(FakeEmbedder(), store, NoOpReranker())
 
-    results = strategy.retrieve("What is U-Net?", top_k=2)
+    results = strategy.retrieve("What is U-Net?", top_k=2).chunks
 
     assert len(results) == 2
     assert results[0].chunk.content == "U-Net architecture"
@@ -74,7 +74,7 @@ def test_hybrid_strategy_fuses_dense_and_sparse():
     )
     strategy = HybridStrategy(FakeEmbedder(), store, NoOpReranker(), rrf_k=60)
 
-    results = strategy.retrieve("What is U-Net?", top_k=10)
+    results = strategy.retrieve("What is U-Net?", top_k=10).chunks
 
     assert results[0].chunk.content == "U-Net architecture"
     assert results[0].ranking_method == "hybrid_rrf"
@@ -93,7 +93,7 @@ def test_hybrid_strategy_empty_sparse_skips_rrf():
     store = FakeStore(results=dense, sparse_results=[])
     strategy = HybridStrategy(FakeEmbedder(), store, NoOpReranker(), rrf_k=60)
 
-    results = strategy.retrieve("query", top_k=5)
+    results = strategy.retrieve("query", top_k=5).chunks
 
     assert len(results) == 1
     assert results[0].score == 0.95
@@ -104,7 +104,7 @@ def test_hybrid_strategy_both_empty():
     store = FakeStore(results=[], sparse_results=[])
     strategy = HybridStrategy(FakeEmbedder(), store, NoOpReranker(), rrf_k=60)
 
-    results = strategy.retrieve("query", top_k=5)
+    results = strategy.retrieve("query", top_k=5).chunks
 
     assert results == []
 
@@ -116,7 +116,7 @@ def test_hybrid_strategy_respects_top_k():
     store = FakeStore(results=dense, sparse_results=sparse)
     strategy = HybridStrategy(FakeEmbedder(), store, NoOpReranker(), rrf_k=60)
 
-    results = strategy.retrieve("query", top_k=3)
+    results = strategy.retrieve("query", top_k=3).chunks
 
     assert len(results) == 3
 

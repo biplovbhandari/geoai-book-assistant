@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock
 
+from conftest import make_streaming_result
+
 from geoai_rag.config import Settings
+from geoai_rag.models.generation_result import GenerationResult
 
 
 class FakeEmbedder:
@@ -23,10 +26,10 @@ class FakeStore:
 
 class FakeLLMClient:
     def chat(self, messages, temperature=0.3, max_tokens=1024):
-        return "fake"
+        return GenerationResult(text="fake")
 
     def chat_stream(self, messages, temperature=0.3, max_tokens=1024):
-        yield self.chat(messages, temperature, max_tokens)
+        return make_streaming_result([self.chat(messages, temperature, max_tokens).text])
 
 
 class FakeSparseEmbedder:

@@ -34,6 +34,7 @@ from geoai_rag.eval.runner import (
 )
 from geoai_rag.interfaces import LLMClient
 from geoai_rag.models import Answer, Chunk, ScoredChunk
+from geoai_rag.models.generation_result import GenerationResult
 
 BASE_URL = "http://api.test"
 ADMIN_TOKEN = "admin-secret"
@@ -169,11 +170,11 @@ class FakeLlmClient:
         messages: list[dict[str, str]],
         temperature: float = 0.3,
         max_tokens: int = 1024,
-    ) -> str:
+    ) -> GenerationResult:
         """Record the call, then return what `reply` gives for the joined message texts."""
         prompt = "\n".join(message["content"] for message in messages)
         self.calls.append({"prompt": prompt, "temperature": temperature, "max_tokens": max_tokens})
-        return self.reply(prompt)
+        return GenerationResult(text=self.reply(prompt))
 
 
 class FakeResult:

@@ -1,13 +1,13 @@
 from unittest.mock import MagicMock
 
-from conftest import create_test_client, make_scored_chunk
+from conftest import create_test_client, make_retrieval_result, make_scored_chunk
 
 
 def _make_fake_pipelines(search_results=None, count=100):
     from api.dependencies import Pipelines
 
     query = MagicMock()
-    query.search.return_value = search_results or [make_scored_chunk()]
+    query.search.return_value = make_retrieval_result(search_results or [make_scored_chunk()])
 
     store = MagicMock()
     store.count.return_value = count
@@ -50,7 +50,7 @@ class TestSearch:
         from api.dependencies import Pipelines
 
         query = MagicMock()
-        query.search.return_value = [make_scored_chunk()]
+        query.search.return_value = make_retrieval_result([make_scored_chunk()])
         store = MagicMock()
         store.count.return_value = 100
         pipelines = Pipelines(query=query, vector_store=store)  # type: ignore[arg-type]

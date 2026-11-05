@@ -1,9 +1,10 @@
 import json
 import uuid
 
-from conftest import create_test_client
+from conftest import create_test_client, make_streaming_result
 
 from api.routes.chat import MAX_HISTORY_CONTENT
+from geoai_rag.models.generation_result import GenerationResult
 
 
 class FakeStreamingQueryPipeline:
@@ -24,7 +25,7 @@ class FakeStreamingQueryPipeline:
         yield {"type": "done"}
 
     def chat_stream(self, messages, temperature=0.3, max_tokens=1024):
-        yield "test"
+        return make_streaming_result(["test"])
 
 
 class FakeNonStreamingQueryPipeline:
@@ -40,7 +41,7 @@ class FakeNonStreamingQueryPipeline:
 
 class _NoStreamLLM:
     def chat(self, messages, temperature=0.3, max_tokens=1024):
-        return "answer"
+        return GenerationResult(text="answer")
 
 
 class FakeNonCallableStreamQueryPipeline:
@@ -58,7 +59,7 @@ class _NonCallableStreamLLM:
     chat_stream = "not callable"
 
     def chat(self, messages, temperature=0.3, max_tokens=1024):
-        return "answer"
+        return GenerationResult(text="answer")
 
 
 class FakeIncompleteQueryPipeline:
@@ -193,7 +194,7 @@ class TestChatEndpoint:
                 raise RuntimeError("boom")
 
             def chat_stream(self, messages, temperature=0.3, max_tokens=1024):
-                yield "x"
+                return make_streaming_result(["x"])
 
         pipelines = _make_fake_pipelines(query=_RaisingPipeline())
         client = create_test_client(monkeypatch, pipelines)

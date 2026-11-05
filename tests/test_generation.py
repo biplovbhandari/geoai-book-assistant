@@ -1,6 +1,13 @@
-from conftest import FakeCitationBuilder, FakeContextBuilder, FakeStrategy, make_scored_chunk
+from conftest import (
+    FakeCitationBuilder,
+    FakeContextBuilder,
+    FakeStrategy,
+    make_scored_chunk,
+    make_streaming_result,
+)
 
 from geoai_rag.models import Answer
+from geoai_rag.models.generation_result import GenerationResult
 from geoai_rag.query import QueryPipeline
 
 
@@ -8,12 +15,12 @@ class FakeLLMClient:
     """Fake LLM that returns a canned answer."""
 
     def chat(self, messages, temperature=0.3, max_tokens=1024):
-        """Return a canned answer string."""
-        return "U-Net is a convolutional neural network [1]."
+        """Return a canned answer."""
+        return GenerationResult(text="U-Net is a convolutional neural network [1].")
 
     def chat_stream(self, messages, temperature=0.3, max_tokens=1024):
-        """Yield the canned answer as a single token."""
-        yield self.chat(messages, temperature, max_tokens)
+        """Stream the canned answer as a single token."""
+        return make_streaming_result([self.chat(messages, temperature, max_tokens).text])
 
 
 class FakeClock:
@@ -77,12 +84,13 @@ def test_ask_compose_chain():
 
     result = pipeline.ask("What is U-Net?")
 
-    assert result.answer == "U-Net is a convolutional neural network [1]."
-    assert len(result.sources) == 1
-    assert result.sources[0].chunk.content == "U-Net architecture"
-    assert len(result.citations) == 1
-    assert result.citations[0].chapter == "03"
-    assert result.citations[0].section == "U-Net"
+    answer = result.answer
+    assert answer.answer == "U-Net is a convolutional neural network [1]."
+    assert len(answer.sources) == 1
+    assert answer.sources[0].chunk.content == "U-Net architecture"
+    assert len(answer.citations) == 1
+    assert answer.citations[0].chapter == "03"
+    assert answer.citations[0].section == "U-Net"
 
 
 def test_ask_zero_chunks_returns_canned_answer():
@@ -96,9 +104,9 @@ def test_ask_zero_chunks_returns_canned_answer():
 
     result = pipeline.ask("What is something not in the book?")
 
-    assert "No relevant information found" in result.answer
-    assert result.sources == []
-    assert result.citations == []
+    assert "No relevant information found" in result.answer.answer
+    assert result.answer.sources == []
+    assert result.answer.citations == []
 
 
 def test_answer_timings_default_to_zero():
@@ -131,8 +139,8 @@ def test_ask_reports_retrieval_and_generation_ms(monkeypatch):
 
     result = pipeline.ask("What is U-Net?")
 
-    assert result.retrieval_ms == 250, "retrieval_ms must time only the retrieve() call"
-    assert result.generation_ms == 1500, "generation_ms must time only the chat() call"
+    assert result.answer.retrieval_ms == 250, "retrieval_ms must time only the retrieve() call"
+    assert result.answer.generation_ms == 1500, "generation_ms must time only the chat() call"
 
 
 def test_ask_zero_chunks_reports_retrieval_ms_and_no_generation(monkeypatch):
@@ -149,5 +157,5 @@ def test_ask_zero_chunks_reports_retrieval_ms_and_no_generation(monkeypatch):
 
     result = pipeline.ask("What is something not in the book?")
 
-    assert result.retrieval_ms == 250, "zero-chunk path must keep the real retrieval time"
-    assert result.generation_ms == 0, "no LLM call happened, so generation_ms must be 0"
+    assert result.answer.retrieval_ms == 250, "zero-chunk path must keep the real retrieval time"
+    assert result.answer.generation_ms == 0, "no LLM call happened, so generation_ms must be 0"

@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 
 from geoai_rag.models import Chunk, ScoredChunk
 from geoai_rag.models.citation import Citation
+from geoai_rag.models.generation_result import StreamingGenerationResult
+from geoai_rag.models.retrieval_result import RetrievalResult, RetrievalTrace
 
 
 @pytest.fixture(autouse=True)
@@ -48,6 +50,35 @@ def make_scored_chunk(
     return ScoredChunk(chunk=chunk, score=score, ranking_method=method)
 
 
+def make_retrieval_result(chunks, query="test"):
+    """Wrap chunks in a minimal RetrievalResult with an empty trace."""
+    return RetrievalResult(
+        chunks=chunks,
+        trace=RetrievalTrace(stages=[], retrieval_query=query, total_latency_ms=0),
+    )
+
+
+def make_streaming_result(tokens):
+    """Build a StreamingGenerationResult that yields the given text tokens.
+
+    Appends a final chunk carrying usage and finish_reason, like a real
+    OpenAI-compatible stream.
+    """
+
+    class _Chunk:
+        def __init__(self, content, finish_reason=None, usage=None):
+            delta = type("Delta", (), {"content": content})()
+            choice = type("Choice", (), {"delta": delta, "finish_reason": finish_reason})()
+            self.choices = [choice]
+            self.usage = usage
+            self.model = "test-model"
+
+    usage = type("Usage", (), {"prompt_tokens": 100, "completion_tokens": 50})()
+    chunks = [_Chunk(t) for t in tokens]
+    chunks.append(_Chunk(None, finish_reason="stop", usage=usage))
+    return StreamingGenerationResult(iter(chunks))
+
+
 class FakeStrategy:
     """Canned retrieval strategy for testing."""
 
@@ -55,8 +86,8 @@ class FakeStrategy:
         self._results = results
 
     def retrieve(self, question, top_k, filters=None):
-        """Return canned results up to top_k."""
-        return self._results[:top_k]
+        """Return canned results up to top_k, wrapped in a RetrievalResult."""
+        return make_retrieval_result(self._results[:top_k], query=question)
 
 
 class FakeContextBuilder:
