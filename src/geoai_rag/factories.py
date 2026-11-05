@@ -179,14 +179,30 @@ def _create_retrieval_strategy(config: Settings, embedder, store, reranker):
     """Build the retrieval strategy from config (provider pattern).
 
     Hybrid passes rrf_k from config so RRF fusion can be tuned without
-    code changes.
+    code changes. Both strategies also receive the model names so the
+    retrieval trace can label each stage; the names do not change which
+    models run.
     """
     from geoai_rag.retrieval.strategies import DenseStrategy, HybridStrategy
 
     if config.retrieval_strategy == "dense":
-        return DenseStrategy(embedder, store, reranker)
+        return DenseStrategy(
+            embedder,
+            store,
+            reranker,
+            embedder_model_name=config.embedding_model_name,
+            reranker_model_name=config.reranker_model_name,
+        )
     if config.retrieval_strategy == "hybrid":
-        return HybridStrategy(embedder, store, reranker, rrf_k=config.rrf_k)
+        return HybridStrategy(
+            embedder,
+            store,
+            reranker,
+            rrf_k=config.rrf_k,
+            embedder_model_name=config.embedding_model_name,
+            sparse_model_name=config.sparse_model_name,
+            reranker_model_name=config.reranker_model_name,
+        )
     raise ValueError(f"Unknown retrieval_strategy: {config.retrieval_strategy}")
 
 

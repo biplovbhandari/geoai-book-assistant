@@ -11,7 +11,9 @@ from geoai_rag.interfaces import (
     RetrievalStrategy,
 )
 from geoai_rag.models.answer import Answer
-from geoai_rag.models.scored_chunk import ScoredChunk
+from geoai_rag.models.generation_result import GenerationResult
+from geoai_rag.models.pipeline_result import PipelineResult
+from geoai_rag.models.retrieval_result import RetrievalResult
 
 _MAX_AUGMENT_CHARS = 500
 
@@ -59,7 +61,7 @@ class QueryPipeline:
         question: str,
         top_k: int,
         filters: dict[str, Any] | None = None,
-    ) -> list[ScoredChunk]:
+    ) -> RetrievalResult:
         """Search for relevant chunks using the configured retrieval strategy.
 
         Args:
@@ -68,7 +70,7 @@ class QueryPipeline:
             filters: Optional metadata filters.
 
         Returns:
-            Ranked list of scored chunks.
+            Ranked chunks together with the per-stage retrieval trace.
         """
         return self._strategy.retrieve(question, top_k, filters)
 
@@ -104,8 +106,8 @@ class QueryPipeline:
         filters: dict[str, Any] | None = None,
         *,
         history: list[dict[str, str]] | None = None,
-    ) -> Answer:
-        """Retrieve chunks, build context, call LLM, and return a cited answer.
+    ) -> PipelineResult:
+        """Retrieve chunks, build context, call the LLM, and return the answer with its trace.
 
         Args:
             question: The user's natural language question.
@@ -113,8 +115,12 @@ class QueryPipeline:
             history: Optional conversation history as a list of role/content dicts.
 
         Returns:
-            Answer with generated text, source chunks, citations, and the
-            elapsed retrieval and generation times in milliseconds.
+            PipelineResult holding the widget-facing ``Answer`` (generated text,
+            source chunks, citations, and the elapsed retrieval and generation
+            times in milliseconds), the retrieval trace, the generation
+            metadata, and the messages sent to the LLM. When retrieval finds no
+            chunks, the generation metadata is empty and no messages are
+            recorded because the LLM is never called.
 
         Raises:
             RuntimeError: If generation adapters are not configured.
@@ -130,30 +136,43 @@ class QueryPipeline:
 
         retrieval_query = self._build_retrieval_query(question, history)
         t0 = time.monotonic()
-        chunks = self._strategy.retrieve(retrieval_query, self._top_k, filters)
+        result = self._strategy.retrieve(retrieval_query, self._top_k, filters)
         retrieval_ms = int((time.monotonic() - t0) * 1000)
 
-        if not chunks:
-            return Answer(
+        # Check result.chunks, not result: a RetrievalResult is always truthy.
+        if not result.chunks:
+            empty_answer = Answer(
                 answer="No relevant information found in the book for this question.",
                 sources=[],
                 citations=[],
                 retrieval_ms=retrieval_ms,
                 generation_ms=0,
             )
+            return PipelineResult(
+                answer=empty_answer,
+                retrieval_trace=result.trace,
+                generation=GenerationResult(text=""),
+                context_messages=[],
+            )
 
-        messages = self._context_builder.build(question, chunks, history=history)
+        messages = self._context_builder.build(question, result.chunks, history=history)
         t1 = time.monotonic()
-        answer_text = self._llm_client.chat(messages, max_tokens=self._max_tokens)
+        gen_result = self._llm_client.chat(messages, max_tokens=self._max_tokens)
         generation_ms = int((time.monotonic() - t1) * 1000)
-        citations = self._citation_builder.build(chunks)
+        citations = self._citation_builder.build(result.chunks)
 
-        return Answer(
-            answer=answer_text,
-            sources=chunks,
+        answer = Answer(
+            answer=gen_result.text,
+            sources=result.chunks,
             citations=citations,
             retrieval_ms=retrieval_ms,
             generation_ms=generation_ms,
+        )
+        return PipelineResult(
+            answer=answer,
+            retrieval_trace=result.trace,
+            generation=gen_result,
+            context_messages=messages,
         )
 
     def ask_stream(
@@ -177,10 +196,18 @@ class QueryPipeline:
             question: The user's natural language question.
             history: Optional conversation history as a list of role/content dicts.
             filters: Optional metadata filters for retrieval.
-            _recording_ctx: Optional mutable dict populated with retrieval data
-                and timing for database recording. Keys set: scored_chunks,
-                retrieval_query, retrieval_ms, generation_wall_ms. Does not
-                affect the yielded event stream.
+            _recording_ctx: Optional mutable dict populated with retrieval data,
+                trace data, and timing for database recording. Does not affect
+                the yielded event stream. Keys set:
+
+                - ``scored_chunks``, ``retrieval_query``, ``retrieval_ms``,
+                  ``retrieval_trace`` (dict): after retrieval, on every path.
+                - ``context_messages``: the messages sent to the LLM, set as
+                  soon as they are built. Unset when no chunks were found.
+                - ``generation_wall_ms``: after the LLM stream ends. Set to 0
+                  when no chunks were found.
+                - ``generation_metadata`` (dict): after the LLM stream ends,
+                  when the stream reports it. Unset when no chunks were found.
 
         Yields:
             Event dicts with a ``type`` key and type-specific fields.
@@ -199,14 +226,16 @@ class QueryPipeline:
 
         retrieval_query = self._build_retrieval_query(question, history)
         t0 = time.monotonic()
-        chunks = self._strategy.retrieve(retrieval_query, self._top_k, filters)
+        result = self._strategy.retrieve(retrieval_query, self._top_k, filters)
         retrieval_ms = int((time.monotonic() - t0) * 1000)
 
-        if not chunks:
+        # Check result.chunks, not result: a RetrievalResult is always truthy.
+        if not result.chunks:
             if _recording_ctx is not None:
                 _recording_ctx["scored_chunks"] = []
                 _recording_ctx["retrieval_query"] = retrieval_query
                 _recording_ctx["retrieval_ms"] = retrieval_ms
+                _recording_ctx["retrieval_trace"] = result.trace.model_dump()
                 _recording_ctx["generation_wall_ms"] = 0
             yield {"type": "meta", "citations": []}
             yield {
@@ -226,26 +255,35 @@ class QueryPipeline:
                     "score": sc.score,
                     "ranking_method": sc.ranking_method,
                 }
-                for sc in chunks
+                for sc in result.chunks
             ]
             _recording_ctx["retrieval_query"] = retrieval_query
             _recording_ctx["retrieval_ms"] = retrieval_ms
+            _recording_ctx["retrieval_trace"] = result.trace.model_dump()
 
-        citations = self._citation_builder.build(chunks)
+        citations = self._citation_builder.build(result.chunks)
         yield {"type": "meta", "citations": [c.model_dump() for c in citations]}
 
-        messages = self._context_builder.build(question, chunks, history=history)
+        messages = self._context_builder.build(question, result.chunks, history=history)
+        if _recording_ctx is not None:
+            _recording_ctx["context_messages"] = messages
 
         has_content = False
+        # Start the clock before chat_stream() so the timing still covers the
+        # request setup, which happens at call time rather than during iteration.
         t1 = time.monotonic()
-        for token in self._llm_client.chat_stream(messages, max_tokens=self._max_tokens):
+        stream = self._llm_client.chat_stream(messages, max_tokens=self._max_tokens)
+        for token in stream:
             yield {"type": "token", "content": token}
             if token.strip():
                 has_content = True
         generation_wall_ms = int((time.monotonic() - t1) * 1000)
 
+        # stream.metadata is only populated once the stream is fully consumed.
         if _recording_ctx is not None:
             _recording_ctx["generation_wall_ms"] = generation_wall_ms
+            if stream.metadata is not None:
+                _recording_ctx["generation_metadata"] = stream.metadata.model_dump()
 
         if not has_content:
             yield {"type": "error", "message": "The model returned an empty response."}
