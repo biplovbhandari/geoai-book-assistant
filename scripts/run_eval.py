@@ -30,8 +30,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from geoai_rag.config import Settings, get_settings
 from geoai_rag.db.engine import create_db_engine, create_session_factory
+from geoai_rag.eval.judge_client import create_judge_client
 from geoai_rag.eval.runner import (
-    JUDGE_TIMEOUT_SECONDS,
     EvalRunner,
     EvalRunnerError,
     NoMatchingQuestionsError,
@@ -96,30 +96,15 @@ def _eval_files(eval_set: Path | None) -> list[Path]:
     return files
 
 
-def _judge_base_url(settings: Settings) -> str:
-    """Return the judge LLM's base URL: EVAL_JUDGE_BASE_URL when set, else LLM_BASE_URL."""
-    return settings.eval_judge_base_url or settings.llm_base_url
-
-
 def _build_judge_client(settings: Settings, llm_model: str) -> OpenAICompatibleClient:
-    """Build the client for the judge LLM, the same kind the server uses for its own answers.
+    """Build the judge client, falling back to the server's own LLM model when none is set.
 
     Going through OpenAICompatibleClient keeps the judge provider-agnostic: LLM_BASE_URL can
     point at a local Ollama, the NASA proxy, or any other OpenAI-compatible endpoint.
     """
-    base_url = _judge_base_url(settings)
-    judge_model = settings.eval_judge_model or llm_model
-    judge_api_key = (
-        settings.eval_judge_api_key.get_secret_value() or settings.llm_api_key.get_secret_value()
-    )
-    logger.info("Judge LLM: %s at %s", judge_model, base_url)
-    return OpenAICompatibleClient(
-        base_url=base_url,
-        api_key=judge_api_key,
-        model=judge_model,
-        timeout=JUDGE_TIMEOUT_SECONDS,
-        reasoning_effort=settings.eval_judge_reasoning_effort,
-    )
+    client = create_judge_client(settings, default_model=llm_model)
+    logger.info("Judge LLM: %s", settings.eval_judge_model or llm_model)
+    return client
 
 
 def _require_settings(settings: Settings) -> None:

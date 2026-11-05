@@ -30,7 +30,7 @@ from api.dependencies import (
     require_generation_ready,
     require_retrieval_ready,
 )
-from geoai_rag.config import TOP_K_MAX, Settings
+from geoai_rag.config import TOP_K_MAX
 from geoai_rag.db.models import (
     ChunkRecord,
     Interaction,
@@ -39,9 +39,9 @@ from geoai_rag.db.models import (
     PromptVersion,
 )
 from geoai_rag.eval.groundedness import build_groundedness_prompt, parse_groundedness_response
-from geoai_rag.eval.runner import JUDGE_MAX_TOKENS, JUDGE_TEMPERATURE, JUDGE_TIMEOUT_SECONDS
+from geoai_rag.eval.judge_client import create_judge_client
+from geoai_rag.eval.runner import JUDGE_MAX_TOKENS, JUDGE_TEMPERATURE
 from geoai_rag.eval.scorer import retrieval_ndcg, retrieval_precision
-from geoai_rag.generation.llm_client import OpenAICompatibleClient
 from geoai_rag.models.pipeline_result import PipelineResult
 
 logger = logging.getLogger(__name__)
@@ -481,34 +481,6 @@ class GroundednessResponse(BaseModel):
     summary: GroundednessSummary
 
 
-def _build_judge_client(settings: Settings) -> OpenAICompatibleClient:
-    """Build the judge LLM client from the EVAL_JUDGE_* settings.
-
-    Each setting falls back to the server's own LLM setting, and the timeout is the eval
-    runner's, because a reasoning model can think for minutes.
-    api/routes/eval.py builds its judge the same way.
-
-    Raises:
-        HTTPException: 503 when neither EVAL_JUDGE_MODEL nor LLM_MODEL names a model.
-    """
-    model = settings.eval_judge_model or settings.llm_model
-    if not model:
-        raise HTTPException(
-            status_code=503,
-            detail="No judge model configured; set EVAL_JUDGE_MODEL or LLM_MODEL",
-        )
-    return OpenAICompatibleClient(
-        base_url=settings.eval_judge_base_url or settings.llm_base_url,
-        api_key=(
-            settings.eval_judge_api_key.get_secret_value()
-            or settings.llm_api_key.get_secret_value()
-        ),
-        model=model,
-        timeout=JUDGE_TIMEOUT_SECONDS,
-        reasoning_effort=settings.eval_judge_reasoning_effort,
-    )
-
-
 def _ask_judge(request: Request, messages: list[dict[str, str]]) -> str:
     """Send messages to the judge LLM while holding an LLM slot, and return its reply text.
 
@@ -518,7 +490,10 @@ def _ask_judge(request: Request, messages: list[dict[str, str]]) -> str:
     Raises:
         HTTPException: 503 when no judge model is configured or no LLM slot frees up in time.
     """
-    judge = _build_judge_client(request.app.state.settings)
+    try:
+        judge = create_judge_client(request.app.state.settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     semaphore = acquire_llm_slot(request)
     try:
         reply = judge.chat(messages, temperature=JUDGE_TEMPERATURE, max_tokens=JUDGE_MAX_TOKENS)
