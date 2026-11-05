@@ -152,6 +152,7 @@ class InteractionListItem(BaseModel):
     """One past interaction in the trace history list."""
 
     id: str
+    conversation_id: str
     question: str
     response_preview: str
     created_at: str
@@ -195,6 +196,7 @@ async def list_interactions(
     page_stmt = (
         select(
             Interaction.id,
+            Interaction.conversation_id,
             Interaction.question,
             func.left(Interaction.response_text, _PREVIEW_CHARS).label("response_preview"),
             Interaction.created_at,
@@ -213,6 +215,7 @@ async def list_interactions(
         interactions=[
             InteractionListItem(
                 id=str(row.id),
+                conversation_id=str(row.conversation_id),
                 question=row.question,
                 response_preview=row.response_preview,
                 created_at=row.created_at.isoformat(),

@@ -1,4 +1,48 @@
-/* Pipeline Trace tab. Tables, buttons and panels come from layout.css. */
+/* Pipeline Trace tab -- base layout: modes, list, live input, sections, messages.
+   Visualization styles (waterfall, journey, claims) are in trace-viz.css. */
+
+/* Trace-specific color tokens for the waterfall bar, score intensities, and claims. */
+
+:root {
+    --tr-dense: #1a73e8;
+    --tr-sparse: #1e8e3e;
+    --tr-fusion: #e8710a;
+    --tr-rerank: #9334e6;
+    --tr-score-1: #e8f0fe;
+    --tr-score-2: #a8c7fa;
+    --tr-score-3: #1a73e8;
+    --tr-survived: #1e8e3e;
+    --tr-claim-bg: #e6f4ea;
+    --tr-claim-bd: #1e8e3e;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --tr-dense: #8ab4f8;
+        --tr-sparse: #81c995;
+        --tr-fusion: #fdd663;
+        --tr-rerank: #c58af9;
+        --tr-score-1: #1e2a3a;
+        --tr-score-2: #2d4a7a;
+        --tr-score-3: #8ab4f8;
+        --tr-survived: #81c995;
+        --tr-claim-bg: #1e3a2f;
+        --tr-claim-bd: #81c995;
+    }
+}
+
+:root[data-theme="dark"] {
+    --tr-dense: #8ab4f8;
+    --tr-sparse: #81c995;
+    --tr-fusion: #fdd663;
+    --tr-rerank: #c58af9;
+    --tr-score-1: #1e2a3a;
+    --tr-score-2: #2d4a7a;
+    --tr-score-3: #8ab4f8;
+    --tr-survived: #81c995;
+    --tr-claim-bg: #1e3a2f;
+    --tr-claim-bd: #81c995;
+}
 
 /* Mode toggle: History | Live */
 
@@ -62,6 +106,26 @@
     background: var(--bg2);
     border-left: 3px solid var(--ac);
     padding-left: 7px;
+}
+
+/* Conversation groups */
+
+.trace-conv-group.multi-turn {
+    border-left: 3px solid var(--ac);
+    margin-bottom: 4px;
+}
+
+.trace-followup {
+    padding-left: 24px;
+}
+
+.trace-turn-label {
+    flex: none;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--tx2);
+    text-transform: uppercase;
+    margin-right: 6px;
 }
 
 .trace-list-q {
@@ -136,7 +200,7 @@
     font-size: 12px;
 }
 
-/* Trace viewer: collapsible stage sections */
+/* Trace viewer: collapsible stage sections (old accordion, kept for graceful degradation) */
 
 .trace-detail {
     margin-top: 12px;
@@ -235,6 +299,11 @@
     text-decoration: underline;
 }
 
+.trace-messages {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
 .trace-message {
     padding: 4px 0;
     border-bottom: 1px solid var(--bg2);
@@ -243,17 +312,6 @@
     overflow-wrap: anywhere;
     word-break: break-all;
     white-space: pre-wrap;
-}
-
-.trace-messages {
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-.trace-citation-source {
-    max-width: 320px;
-    font-size: 11px;
-    word-break: break-all;
 }
 
 .trace-message:last-child {
@@ -265,6 +323,12 @@
     color: var(--tx2);
     text-transform: uppercase;
     font-size: 10px;
+}
+
+.trace-citation-source {
+    max-width: 320px;
+    font-size: 11px;
+    word-break: break-all;
 }
 
 /* Reasoning content box */
@@ -292,7 +356,7 @@
     line-height: 1.5;
 }
 
-/* Groundedness check section */
+/* Groundedness check section (base button and summary) */
 
 .trace-groundedness {
     padding: 12px 0;

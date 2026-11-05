@@ -1,0 +1,474 @@
+/* Pipeline Trace tab -- visualization components: stat tiles, waterfall,
+   chunk journey, section layout, key-value lists, citation list, claims. */
+
+/* Stat tiles row */
+
+.trace-stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1px;
+    background: var(--bd);
+    border: 1px solid var(--bd);
+    border-radius: 4px;
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+
+.trace-stat-tile {
+    background: var(--bg);
+    padding: 12px;
+    text-align: center;
+}
+
+.trace-stat-value {
+    font-size: 20px;
+    font-weight: 600;
+    font-family: var(--mono);
+    color: var(--tx);
+    line-height: 1.2;
+}
+
+.trace-stat-value.good {
+    color: var(--gd);
+}
+
+.trace-stat-label {
+    font-size: 11px;
+    color: var(--tx2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+}
+
+/* Question line above the sections */
+
+.trace-question {
+    font-size: 14px;
+    color: var(--tx);
+    margin-bottom: 16px;
+}
+
+.trace-question-date {
+    font-size: 12px;
+    color: var(--tx2);
+    margin-left: 8px;
+}
+
+/* Collapsible sections using native <details> */
+
+.trace-section {
+    border-bottom: 1px solid var(--bd);
+}
+
+.trace-section:first-of-type {
+    border-top: 1px solid var(--bd);
+}
+
+.trace-section > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    font-size: 13px;
+}
+
+.trace-section > summary::-webkit-details-marker {
+    display: none;
+}
+
+.trace-section > summary::before {
+    content: "+";
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--tx2);
+    margin-right: 8px;
+    width: 16px;
+    flex-shrink: 0;
+}
+
+.trace-section[open] > summary::before {
+    content: "\2212";
+}
+
+.trace-section > summary:hover {
+    color: var(--ac);
+}
+
+.trace-section-title {
+    font-weight: 500;
+    flex: 1;
+}
+
+.trace-section-metric {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--tx2);
+    margin-left: 12px;
+    white-space: nowrap;
+}
+
+.trace-section-body {
+    padding: 0 0 16px 24px;
+}
+
+/* Waterfall bar: stacked colored segments proportional to latency */
+
+.trace-waterfall-bar {
+    display: flex;
+    height: 22px;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    background: var(--bg2);
+}
+
+.trace-wf-seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-family: var(--mono);
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.trace-wf-seg.dense { background: var(--tr-dense); }
+.trace-wf-seg.sparse { background: var(--tr-sparse); }
+
+.trace-wf-seg.fusion {
+    background: var(--tr-fusion);
+    color: #202124;
+}
+
+.trace-wf-seg.rerank { background: var(--tr-rerank); }
+
+/* Waterfall legend */
+
+.trace-wf-legend {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--tx2);
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.trace-wf-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.trace-wf-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+}
+
+.trace-wf-swatch.dense { background: var(--tr-dense); }
+.trace-wf-swatch.sparse { background: var(--tr-sparse); }
+.trace-wf-swatch.fusion { background: var(--tr-fusion); }
+.trace-wf-swatch.rerank { background: var(--tr-rerank); }
+
+/* Sub-stage detail table inside Retrieval */
+
+.trace-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-bottom: 16px;
+}
+
+.trace-detail-table th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--tx2);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--bd);
+}
+
+.trace-detail-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--bd);
+    font-family: var(--mono);
+    font-size: 11px;
+}
+
+.trace-detail-table td:first-child {
+    font-family: var(--font);
+    font-weight: 500;
+}
+
+/* Chunk journey table */
+
+.trace-journey-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--tx2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    padding-top: 4px;
+    border-top: 1px solid var(--bd);
+}
+
+.trace-journey-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.trace-journey-table {
+    width: 100%;
+    min-width: 580px;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.trace-journey-table thead th {
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 10px;
+    color: var(--tx2);
+    padding: 5px 6px;
+    border-bottom: 2px solid var(--bd);
+    text-align: center;
+    white-space: nowrap;
+}
+
+.trace-journey-table thead th:first-child {
+    text-align: left;
+    min-width: 180px;
+}
+
+/* stylelint-disable no-descending-specificity -- journey-table selectors are
+   scoped to a different component from detail-table; they never conflict. */
+
+.trace-journey-table tbody tr {
+    border-bottom: 1px solid var(--bd);
+}
+
+.trace-journey-table tbody tr:hover td {
+    background: transparent;
+}
+
+.trace-journey-table tbody tr.survived {
+    border-left: 3px solid var(--tr-survived);
+}
+
+.trace-journey-table tbody tr.eliminated {
+    border-left: 3px solid transparent;
+    opacity: 0.5;
+}
+
+.trace-journey-table td {
+    padding: 4px 6px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+}
+
+.trace-journey-table td:first-child {
+    text-align: left;
+    font-family: var(--font);
+}
+
+/* stylelint-enable no-descending-specificity */
+
+.trace-chunk-name {
+    font-weight: 500;
+    font-size: 11px;
+}
+
+.trace-score-cell {
+    border-radius: 2px;
+    padding: 2px 4px;
+}
+
+.trace-score-cell.i0 {
+    background: transparent;
+    color: var(--tx2);
+}
+
+.trace-score-cell.i1 { background: var(--tr-score-1); }
+.trace-score-cell.i2 { background: var(--tr-score-2); }
+
+.trace-score-cell.i3 {
+    background: var(--tr-score-3);
+    color: #fff;
+}
+
+.trace-empty-cell {
+    color: var(--bd);
+}
+
+.trace-rank-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--tr-survived);
+    color: #fff;
+    margin-right: 4px;
+}
+
+.trace-stage-meta {
+    font-size: 9px;
+    color: var(--tx2);
+    font-weight: 400;
+    display: block;
+}
+
+/* Key-value list used in Context Assembly and Generation sections */
+
+.trace-kv-list {
+    list-style: none;
+    font-size: 12px;
+}
+
+.trace-kv-list li {
+    display: flex;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--bd);
+}
+
+.trace-kv-list li:last-child {
+    border-bottom: none;
+}
+
+.trace-kv-key {
+    color: var(--tx2);
+    width: 140px;
+    flex-shrink: 0;
+    font-size: 11px;
+}
+
+.trace-kv-val {
+    font-family: var(--mono);
+    font-size: 11px;
+}
+
+/* Citation list */
+/* stylelint-disable no-descending-specificity -- scoped to .trace-citation-list,
+   separate component from .trace-kv-list above. */
+
+.trace-citation-list {
+    list-style: none;
+    font-size: 12px;
+}
+
+.trace-citation-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--bd);
+}
+
+.trace-citation-list li:last-child {
+    border-bottom: none;
+}
+
+/* stylelint-enable no-descending-specificity */
+
+.trace-cite-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--tx2);
+    width: 20px;
+    flex-shrink: 0;
+}
+
+.trace-cite-path {
+    font-family: var(--mono);
+    font-size: 11px;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.trace-cite-score {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--tx2);
+    white-space: nowrap;
+}
+
+/* Groundedness claims */
+/* stylelint-disable no-descending-specificity -- scoped to .trace-claims,
+   separate component from .trace-kv-list and .trace-citation-list. */
+
+.trace-claims {
+    list-style: none;
+}
+
+.trace-claims li {
+    font-size: 12px;
+    padding: 5px 8px;
+    border-left: 3px solid var(--tr-claim-bd);
+    background: var(--tr-claim-bg);
+    margin-bottom: 3px;
+    border-radius: 0 2px 2px 0;
+}
+
+.trace-claims li.unsupported {
+    border-left-color: var(--cr);
+    background: transparent;
+}
+
+/* stylelint-enable no-descending-specificity */
+
+.trace-claims .trace-claim-verdict {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--tr-claim-bd);
+    margin-left: 6px;
+}
+
+.trace-claims li.unsupported .trace-claim-verdict {
+    color: var(--cr);
+}
+
+.trace-claims .trace-claim-source {
+    font-size: 10px;
+    color: var(--tx2);
+    display: block;
+    margin-top: 1px;
+}
+
+/* Mobile */
+
+@media (width <= 500px) {
+    .trace-stats-bar {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .trace-section-body {
+        padding-left: 16px;
+    }
+
+    .trace-journey-table {
+        min-width: 480px;
+    }
+
+    .trace-kv-key {
+        width: 100px;
+    }
+
+    .trace-wf-legend {
+        gap: 8px;
+    }
+}
