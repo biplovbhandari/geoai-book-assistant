@@ -22,6 +22,7 @@ import { useAnalytics } from './views/analytics.js';
 import { useEval } from './views/eval.js';
 import { usePromptLab } from './views/prompt-lab.js';
 import { useRetrieval } from './views/retrieval.js';
+import { useTrace } from './views/trace.js';
 
 if (typeof Vue === 'undefined') {
     // #app stays hidden (v-cloak) until Vue mounts, so a failed CDN load would otherwise leave a blank page.
@@ -51,6 +52,7 @@ createApp({
         const evaluation = useEval(session, disconnect);
         const promptLab = usePromptLab(session, disconnect);
         const retrieval = useRetrieval(session, disconnect);
+        const trace = useTrace(session, disconnect);
 
         /** Stops the 60-second auto-refresh. */
         function stopRefresh() {
@@ -73,6 +75,7 @@ createApp({
             analytics.fetchAll();
             evaluation.fetchAll();
             promptLab.fetchAll();
+            trace.fetchInteractions();
             stopRefresh();
             refreshTimer = setInterval(() => {
                 analytics.fetchAll();
@@ -116,6 +119,7 @@ createApp({
             evaluation.reset();
             promptLab.reset();
             retrieval.reset();
+            trace.reset();
             tab.value = 'analytics';
             authError.value = typeof reason === 'string' ? reason : '';
             authenticated.value = false;
@@ -145,6 +149,7 @@ createApp({
             eval: reactive(evaluation),
             promptLab: reactive(promptLab),
             retrieval: reactive(retrieval),
+            trace: reactive(trace),
             // A string `ref` in the template is matched by name against the top level of this object,
             // so the chart canvas cannot live inside the analytics namespace.
             dailyCanvas: analytics.dailyCanvas,
