@@ -12,9 +12,10 @@
     try { visitorId = localStorage.getItem(STORAGE_KEY_VISITOR); } catch (_e) {}
     try { conversationId = localStorage.getItem(STORAGE_KEY_CONVERSATION); } catch (_e) {}
     var SUGGESTED_QUESTIONS = [
-        "What deep learning architectures are used for crop mapping?",
-        "How does semantic segmentation differ from object detection?",
-        "What is transfer learning and how is it applied to Earth observation?"
+        "What is semantic segmentation in the context of remote sensing?",
+        "How does the book use deep learning to predict crop yield?",
+        "Why use an Earth observation foundation model instead of training my own?",
+        "How is ethics applied in GeoAI?"
     ];
     var panel = document.getElementById('geoai-chat-panel');
     var toggle = document.getElementById('geoai-chat-toggle');
@@ -138,8 +139,17 @@
         // 6. Bold / italic
         html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
         html = html.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
-        // 7a. Collapse blank lines between list items so the block regex captures them as one list
-        html = html.replace(/(\n[ \t]*(?:\d+\.|-)[ \t]+[^\n]+)\n{2,}(?=[ \t]*(?:\d+\.|-)[ \t])/g, '$1\n');
+        // 7a. Collapse blank lines between list items (including multi-line items whose
+        // continuation lines have no marker) so the block regex sees one list, not many.
+        html = html.replace(/((?:^|\n)[ \t]*(?:\d+\.|-)[ \t]+[^\n]+(?:\n(?![ \t]*(?:\d+\.|-)[ \t])[^\n]+)*)\n{2,}(?=[ \t]*(?:\d+\.|-)[ \t])/g, '$1\n');
+        // 7a-fold. Join continuation lines onto their list item so each item is one physical line.
+        // Headings and table rows are left alone. Loop because each pass folds one line per item.
+        var foldRe = /(\n[ \t]*(?:\d+\.|-)[ \t]+[^\n]+)\n(?![ \t]*(?:\d+\.|-)[ \t])(?!<h|\|)([^\n]+)/g;
+        var prevHtml;
+        do {
+            prevHtml = html;
+            html = html.replace(foldRe, '$1 $2');
+        } while (html !== prevHtml);
         // 7b. Lists (unified: supports nested - under \d+., tolerates indentation)
         html = html.replace(/((?:^|\n)[ \t]*(?:\d+\. |- ).+(?:\n[ \t]*(?:\d+\. |- ).+)*)/g, function(block) {
             var lines = block.trim().split('\n');
