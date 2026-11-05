@@ -189,6 +189,7 @@ Additional endpoints:
 - `/feedback` — user rating on answer quality
 - `/log` — analytics data forwarding
 - `/metrics` — Prometheus metrics (admin-gated)
+- `/debug/*` - pipeline trace, retrieval inspector, and groundedness (admin-gated)
 
 ---
 
