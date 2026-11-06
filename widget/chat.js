@@ -6,6 +6,8 @@
     var userHasScrolled = false;
     var STORAGE_KEY_VISITOR = 'geoai-book-visitor-id';
     var STORAGE_KEY_CONVERSATION = 'geoai-book-conversation-id';
+    var STORAGE_KEY_LAST_MSG = 'geoai-book-last-message-ts';
+    var INACTIVITY_MS = 30 * 60 * 1000;
     var visitorId = null;
     var conversationId = null;
     var currentInteractionId = null;
@@ -44,6 +46,7 @@
         if (state.isLoading) return;
         conversationId = null;
         try { localStorage.removeItem(STORAGE_KEY_CONVERSATION); } catch (_e) {}
+        try { localStorage.removeItem(STORAGE_KEY_LAST_MSG); } catch (_e) {}
         state.messages = [];
         currentCitations = null;
         messagesEl.innerHTML = '';
@@ -139,13 +142,22 @@
         // 6. Bold / italic
         html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
         html = html.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
-        // 7a. Collapse blank lines between list items (including multi-line items whose
-        // continuation lines have no marker) so the block regex sees one list, not many.
-        html = html.replace(/((?:^|\n)[ \t]*(?:\d+\.|-)[ \t]+[^\n]+(?:\n(?![ \t]*(?:\d+\.|-)[ \t])[^\n]+)*)\n{2,}(?=[ \t]*(?:\d+\.|-)[ \t])/g, '$1\n');
-        // 7a-fold. Join continuation lines onto their list item so each item is one physical line.
-        // Headings and table rows are left alone. Loop because each pass folds one line per item.
-        var foldRe = /(\n[ \t]*(?:\d+\.|-)[ \t]+[^\n]+)\n(?![ \t]*(?:\d+\.|-)[ \t])(?!<h|\|)([^\n]+)/g;
+        // 7a. Collapse blank lines between list items so the block regex sees one
+        // contiguous list. Handles multi-line items: a marker line may be followed by
+        // indented continuation lines before the blank separator. The loop handles
+        // chains (collapsing 1-2 may make 2-3 adjacent).
         var prevHtml;
+        do {
+            prevHtml = html;
+            html = html.replace(
+                /(\n[ \t]*(?:\d+\.|-)[ \t][^\n]+(?:\n(?![ \t]*(?:\d+\.|-)[ \t])(?!\n)[^\n]+)*)\n\n([ \t]*(?:\d+\.|-)[ \t])/g,
+                '$1\n$2'
+            );
+        } while (html !== prevHtml);
+        // 7a-fold. Join continuation lines onto the preceding list item so each
+        // logical item is one physical line for the block regex. Only folds lines
+        // that are not themselves list markers and not blank.
+        var foldRe = /(\n[ \t]*(?:\d+\.|-)[ \t]+[^\n]+)\n(?![ \t]*(?:\d+\.|-)[ \t])(?!\n)([^\n]+)/g;
         do {
             prevHtml = html;
             html = html.replace(foldRe, '$1 $2');
@@ -493,6 +505,17 @@
         if (state.isLoading) return;
         question = (question || '').trim();
         if (!question) return;
+        try {
+            var lastTs = parseInt(localStorage.getItem(STORAGE_KEY_LAST_MSG), 10);
+            if (lastTs && Date.now() - lastTs > INACTIVITY_MS && conversationId) {
+                conversationId = null;
+                localStorage.removeItem(STORAGE_KEY_CONVERSATION);
+                state.messages = [];
+                currentCitations = null;
+                messagesEl.innerHTML = '';
+            }
+        } catch (_e) {}
+        try { localStorage.setItem(STORAGE_KEY_LAST_MSG, String(Date.now())); } catch (_e) {}
         state.isLoading = true;
         setControls(true);
         suggestions.classList.add('hidden');
