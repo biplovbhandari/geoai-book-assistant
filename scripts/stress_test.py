@@ -93,7 +93,7 @@ def percentile(values: list[float], pct: float) -> float:
     if not values:
         return 0.0
     ordered = sorted(values)
-    index = max(0, min(len(ordered) - 1, int(round(pct / 100 * len(ordered) + 0.5)) - 1))
+    index = max(0, min(len(ordered) - 1, round(pct / 100 * len(ordered) + 0.5) - 1))
     return ordered[index]
 
 
@@ -168,7 +168,9 @@ def pick_questions(questions: list[str], count: int, offset: int) -> list[str]:
 
 def print_round(results: list[RequestResult], wall: float) -> None:
     """Print the per-request table and summary statistics for one round."""
-    print(f"  {'#':>2}  {'Question':<{QUESTION_COLUMN_WIDTH}}  {'TTFT':>6}  {'Total':>7}  {'Tokens':>6}  Status")
+    print(
+        f"  {'#':>2}  {'Question':<{QUESTION_COLUMN_WIDTH}}  {'TTFT':>6}  {'Total':>7}  {'Tokens':>6}  Status"
+    )
     for i, r in enumerate(results, 1):
         print(
             f"  {i:>2}  {_truncate(r.question, QUESTION_COLUMN_WIDTH):<{QUESTION_COLUMN_WIDTH}}  "
@@ -189,7 +191,9 @@ def print_round(results: list[RequestResult], wall: float) -> None:
             + (f"  stdev={statistics.stdev(totals):.1f}s" if len(totals) > 1 else "")
         )
     if ttfts:
-        print(f"  TTFT:        min={min(ttfts):.1f}s  avg={statistics.mean(ttfts):.1f}s  max={max(ttfts):.1f}s")
+        print(
+            f"  TTFT:        min={min(ttfts):.1f}s  avg={statistics.mean(ttfts):.1f}s  max={max(ttfts):.1f}s"
+        )
     print(f"  Errors:      {errors}/{len(results)}")
     print()
 
@@ -240,7 +244,9 @@ async def run_stress_test(
     offset = 0
 
     async with httpx.AsyncClient(
-        headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"},
+        headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        },
     ) as client:
         for concurrency in levels:
             stats = LevelStats(concurrency=concurrency, results=[], wall_times=[])
@@ -265,7 +271,9 @@ def _parse_levels(raw: str) -> list[int]:
     try:
         levels = [int(part) for part in raw.split(",") if part.strip()]
     except ValueError:
-        raise argparse.ArgumentTypeError(f"concurrency must be comma-separated integers, got '{raw}'")
+        raise argparse.ArgumentTypeError(
+            f"concurrency must be comma-separated integers, got '{raw}'"
+        )
     if not levels or any(n < 1 for n in levels):
         raise argparse.ArgumentTypeError(f"concurrency levels must be >= 1, got '{raw}'")
     return levels
@@ -277,9 +285,14 @@ def main() -> int:
     parser.add_argument("questions", nargs="*", help="Custom questions (default: golden questions)")
     parser.add_argument("--url", default="http://localhost:8000", help="Base URL to test")
     parser.add_argument(
-        "--concurrency", type=_parse_levels, default=[1, 2, 5], help="Comma-separated concurrency levels"
+        "--concurrency",
+        type=_parse_levels,
+        default=[1, 2, 5],
+        help="Comma-separated concurrency levels",
     )
-    parser.add_argument("--rounds", type=int, default=1, help="Repeat each concurrency level N times")
+    parser.add_argument(
+        "--rounds", type=int, default=1, help="Repeat each concurrency level N times"
+    )
     parser.add_argument("--timeout", type=float, default=120, help="Per-request timeout in seconds")
     args = parser.parse_args()
 
@@ -295,7 +308,9 @@ def main() -> int:
     )
     url = args.url.rstrip("/")
 
-    stats = asyncio.run(run_stress_test(url, args.concurrency, args.rounds, questions, args.timeout))
+    stats = asyncio.run(
+        run_stress_test(url, args.concurrency, args.rounds, questions, args.timeout)
+    )
     print_overall(stats)
 
     failed = sum(1 for level in stats for r in level.results if not r.ok)
