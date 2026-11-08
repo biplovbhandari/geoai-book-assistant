@@ -7,42 +7,55 @@ from geoai_rag.models.scored_chunk import ScoredChunk
 _PROMPT_PATH = Path(__file__).parent / "PROMPT.md"
 SYSTEM_PROMPT = _PROMPT_PATH.read_text().strip()
 
-_MAX_HISTORY_CHARS = 4000
+_HISTORY_BUDGET_PCT = 0.60
+_CHARS_PER_TOKEN = 4
+_FALLBACK_HISTORY_TOKENS = 1000
 
 
 class DefaultContextBuilder:
     """Assembles system + user messages from retrieved chunks."""
+
+    def __init__(self, max_history_tokens: int = _FALLBACK_HISTORY_TOKENS) -> None:
+        """Initialize with a history token budget.
+
+        Args:
+            max_history_tokens: Maximum tokens of conversation history to include.
+                Derived from ``LLM_CONTEXT_WINDOW * 0.60`` at startup.
+                Internally converted to character caps.
+        """
+        max_chars = max_history_tokens * _CHARS_PER_TOKEN
+        self._max_history_chars = max_chars
+        self._per_message_cap = max(max_chars // 4, 200)
+        self._pre_escape_cap = self._per_message_cap * 2
 
     @staticmethod
     def _xml_escape(text: str) -> str:
         """Escape XML-special characters to prevent tag injection."""
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    @staticmethod
-    def _format_history(history: list[dict[str, str]]) -> str:
-        """Format history as XML-delimited turns, capped by total char budget.
+    def _format_history(self, history: list[dict[str, str]]) -> str:
+        """Format history as XML-delimited turns, capped by the token budget.
 
         Content is XML-escaped to prevent injection of closing tags.
         Escaping happens before truncation so the cap applies to final output size.
+        Per-message and total caps scale with the context window via the
+        constructor's ``max_history_tokens``.
         """
-        _PRE_ESCAPE_CAP = 2000
-        _POST_ESCAPE_CAP = 800
-
         turns = []
         for msg in history:
             role = msg.get("role", "user")
             if role not in ("user", "assistant"):
                 role = "user"
             content = str(msg.get("content", ""))
-            if len(content) > _PRE_ESCAPE_CAP:
-                content = content[:_PRE_ESCAPE_CAP]
+            if len(content) > self._pre_escape_cap:
+                content = content[: self._pre_escape_cap]
             content = DefaultContextBuilder._xml_escape(content)
-            if len(content) > _POST_ESCAPE_CAP:
-                content = content[:_POST_ESCAPE_CAP] + "..."
+            if len(content) > self._per_message_cap:
+                content = content[: self._per_message_cap] + "..."
             turns.append(f'<turn role="{role}">{content}</turn>')
 
         result = "\n".join(turns)
-        while len(result) > _MAX_HISTORY_CHARS and turns:
+        while len(result) > self._max_history_chars and turns:
             turns.pop(0)
             result = "\n".join(turns)
         return result

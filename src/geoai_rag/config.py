@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     llm_reasoning_effort: str = Field(default="none")
     llm_extra_create_params: dict = Field(default_factory=dict)
     llm_max_tokens: int = Field(default=2048, ge=128, le=16384)
+    llm_context_window: int = Field(default=32768, ge=1024, le=1048576)
     eval_judge_reasoning_effort: str = Field(default="none")
     eval_judge_model: str = ""
     eval_judge_base_url: str = ""

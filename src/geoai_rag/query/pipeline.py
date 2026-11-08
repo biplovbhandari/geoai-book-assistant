@@ -289,4 +289,10 @@ class QueryPipeline:
             yield {"type": "error", "message": "The model returned an empty response."}
             return
 
-        yield {"type": "done"}
+        done_event: dict = {"type": "done"}
+        if stream.metadata is not None:
+            if stream.metadata.prompt_tokens is not None:
+                done_event["prompt_tokens"] = stream.metadata.prompt_tokens
+            if stream.metadata.completion_tokens is not None:
+                done_event["completion_tokens"] = stream.metadata.completion_tokens
+        yield done_event
