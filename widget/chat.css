@@ -1,43 +1,53 @@
 #geoai-chat-widget {
   --gai-primary: #1a5276;
-  --gai-bg: #fff;
+  --gai-primary-soft: #3a7ca5;
+  --gai-bg: #fafafa;
   --gai-text: #1a1a1a;
-  --gai-border: #e0e0e0;
+  --gai-text-secondary: #5f6368;
+  --gai-border: #dadce0;
   --gai-user-bg: #e8f0fe;
+  --gai-assistant-bg: #fff;
   --gai-error-bg: #fdecea;
   --gai-warn: #e8a000;
   --gai-critical: #d93025;
+  --gai-code-bg: #f1f3f4;
 
   position: fixed;
   bottom: 0;
   right: 0;
   z-index: 1050;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 [data-bs-theme="dark"] #geoai-chat-widget {
-  --gai-primary: #2980b9;
-  --gai-bg: #1e1e1e;
+  --gai-primary: #5b9ec4;
+  --gai-primary-soft: #4a8db3;
+  --gai-bg: #1a1a1e;
   --gai-text: #e0e0e0;
-  --gai-border: #444;
+  --gai-text-secondary: #9aa0a6;
+  --gai-border: #3c3c42;
   --gai-user-bg: #1a3a5c;
+  --gai-assistant-bg: #242428;
   --gai-error-bg: #4a1a1a;
   --gai-warn: #fdd663;
   --gai-critical: #f28b82;
+  --gai-code-bg: #2a2a2e;
 }
 
 #geoai-chat-toggle {
   position: fixed;
   bottom: 24px;
   right: 24px;
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   border: none;
   background: var(--gai-primary);
   color: #fff;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 25%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 18%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -47,7 +57,7 @@
 
 #geoai-chat-toggle:hover {
   transform: scale(1.05);
-  box-shadow: 0 6px 16px rgb(0 0 0 / 30%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 22%);
 }
 
 #geoai-chat-toggle svg {
@@ -64,16 +74,16 @@
   height: 520px;
   background: var(--gai-bg);
   border: 1px solid var(--gai-border);
-  border-radius: 12px;
-  box-shadow: 0 8px 30px rgb(0 0 0 / 15%);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgb(0 0 0 / 10%);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   z-index: 1051;
-  transform: scale(0.9) translateY(20px);
+  transform: scale(0.95) translateY(10px);
   opacity: 0;
   pointer-events: none;
-  transition: transform 0.25s ease, opacity 0.25s ease;
+  transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
 #geoai-chat-panel.open {
@@ -86,7 +96,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 10px 16px;
   background: var(--gai-primary);
   color: #fff;
   flex-shrink: 0;
@@ -94,8 +104,9 @@
 
 #geoai-chat-panel header h2 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 #geoai-chat-suggestions button {
@@ -181,7 +192,7 @@
 
 #geoai-chat-widget .msg-assistant {
   align-self: flex-start;
-  background: var(--gai-bg);
+  background: var(--gai-assistant-bg);
   border: 1px solid var(--gai-border);
   border-bottom-left-radius: 4px;
 }
@@ -203,8 +214,8 @@
 }
 
 #geoai-chat-widget .msg-assistant code {
-  background: #f0f0f0;
-  padding: 1px 4px;
+  background: var(--gai-code-bg);
+  padding: 2px 5px;
   border-radius: 3px;
   font-size: 0.8rem;
 }
@@ -215,19 +226,20 @@
 }
 
 #geoai-chat-widget .msg-assistant pre {
-  background: #f5f5f5;
-  padding: 8px;
+  background: var(--gai-code-bg);
+  padding: 10px 12px;
   border-radius: 6px;
   overflow-x: auto;
   font-size: 0.8rem;
+  border: 1px solid var(--gai-border);
 }
 
 [data-bs-theme="dark"] #geoai-chat-widget .msg-assistant pre {
-  background: #2a2a2a;
+  background: var(--gai-code-bg);
 }
 
 [data-bs-theme="dark"] #geoai-chat-widget .msg-assistant code {
-  background: #333;
+  background: var(--gai-code-bg);
 }
 
 #geoai-chat-widget .msg-assistant ul,
@@ -420,19 +432,25 @@
   border: 1px solid var(--gai-border);
   border-radius: 8px;
   padding: 8px 12px;
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   resize: none;
   min-height: 38px;
   max-height: 120px;
   font-family: inherit;
   line-height: 1.4;
-  background: var(--gai-bg);
+  background: var(--gai-assistant-bg);
   color: var(--gai-text);
+  transition: border-color 0.15s;
+}
+
+#geoai-chat-form textarea::placeholder {
+  color: var(--gai-text-secondary);
 }
 
 #geoai-chat-form textarea:focus {
-  outline: 2px solid var(--gai-primary);
-  outline-offset: -1px;
+  outline: none;
+  border-color: var(--gai-primary-soft);
+  box-shadow: 0 0 0 2px rgb(44 95 124 / 12%);
 }
 
 #geoai-chat-form button[type="submit"] {
@@ -441,16 +459,20 @@
   color: #fff;
   border: none;
   border-radius: 8px;
-  padding: 8px 14px;
+  padding: 8px 16px;
   cursor: pointer;
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  transition: opacity 0.15s;
+  transition: background 0.15s;
 }
 
 #geoai-chat-form button[type="submit"]:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+#geoai-chat-form button[type="submit"]:hover:not(:disabled) {
+  background: var(--gai-primary-soft);
 }
 
 #geoai-chat-status {
@@ -574,11 +596,10 @@
 }
 
 #geoai-chat-disclaimer {
-  padding: 4px 16px 8px;
+  padding: 4px 16px 6px;
   margin: 0;
-  font-size: 0.7rem;
-  color: var(--gai-text);
-  opacity: 0.5;
+  font-size: 0.65rem;
+  color: var(--gai-text-secondary);
   text-align: center;
   flex-shrink: 0;
 }
