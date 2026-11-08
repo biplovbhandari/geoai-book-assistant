@@ -225,11 +225,16 @@ def _create_llm_client(config: Settings):
     raise ValueError(f"Unknown llm_provider: {config.llm_provider}")
 
 
-def _create_context_builder():
-    """Build the context builder (direct pattern, single adapter)."""
+def _create_context_builder(config: Settings):
+    """Build the context builder with a history budget scaled to the context window.
+
+    The budget is 60% of the configured context window, so history caps
+    adjust automatically when the model or context size changes.
+    """
     from geoai_rag.generation.context_builder import DefaultContextBuilder
 
-    return DefaultContextBuilder()
+    max_history_tokens = int(config.llm_context_window * 0.60)
+    return DefaultContextBuilder(max_history_tokens=max_history_tokens)
 
 
 def _create_citation_builder():
@@ -286,7 +291,7 @@ def create_pipelines(config: Settings) -> Pipelines:
     llm_client = None
     citation_builder = None
     try:
-        context_builder = _create_context_builder()
+        context_builder = _create_context_builder(config)
         llm_client = _create_llm_client(config)
         citation_builder = _create_citation_builder()
     except Exception:

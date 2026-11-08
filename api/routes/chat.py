@@ -126,6 +126,8 @@ def chat(request: Request, body: ChatRequest):
                 _recording_ctx=pipeline_ctx,
             ):
                 if event["type"] == "meta":
+                    if settings is not None:
+                        event["context_window"] = settings.llm_context_window
                     # Inject IDs per API contract
                     event["interaction_id"] = str(interaction_id)
                     if is_new_conversation:

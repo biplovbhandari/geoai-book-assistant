@@ -62,15 +62,24 @@ class TestSystemPromptHardening:
 
 class TestFormatHistory:
     def test_per_turn_truncation(self):
-        builder = DefaultContextBuilder()
+        builder = DefaultContextBuilder(max_history_tokens=500)
+        # 500 tokens -> max_chars=2000, per_message_cap=max(500,200)=500,
+        # pre_escape_cap=1000. Input 3000 -> pre-escape to 1000 -> post to 500+"...".
         history = [{"role": "user", "content": "a" * 3000}]
         result = builder._format_history(history)
-        # PRE cap 2000, then POST cap 800 + "..." -> exactly 803 chars of content.
-        assert result == '<turn role="user">' + "a" * 800 + "...</turn>"
+        assert result == '<turn role="user">' + "a" * 500 + "...</turn>"
+
+    def test_per_turn_truncation_small_budget(self):
+        builder = DefaultContextBuilder(max_history_tokens=100)
+        # 100 tokens -> max_chars=400, per_message_cap=max(100,200)=200,
+        # pre_escape_cap=400. Input 3000 -> pre-escape to 400 -> post to 200+"...".
+        history = [{"role": "user", "content": "a" * 3000}]
+        result = builder._format_history(history)
+        assert result == '<turn role="user">' + "a" * 200 + "...</turn>"
 
     def test_total_budget_drops_oldest(self):
-        builder = DefaultContextBuilder()
-        # Distinguishable 700-char turns so we can prove WHICH survive the budget.
+        builder = DefaultContextBuilder(max_history_tokens=1000)
+        # max_history_chars = 4000. Distinguishable 700-char turns.
         history = [{"role": "user", "content": f"MARKER{i:02d}" + "x" * 692} for i in range(10)]
         result = builder._format_history(history)
         assert len(result) <= 4000
