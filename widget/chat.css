@@ -5,6 +5,8 @@
   --gai-border: #e0e0e0;
   --gai-user-bg: #e8f0fe;
   --gai-error-bg: #fdecea;
+  --gai-warn: #e8a000;
+  --gai-critical: #d93025;
 
   position: fixed;
   bottom: 0;
@@ -20,6 +22,8 @@
   --gai-border: #444;
   --gai-user-bg: #1a3a5c;
   --gai-error-bg: #4a1a1a;
+  --gai-warn: #fdd663;
+  --gai-critical: #f28b82;
 }
 
 #geoai-chat-toggle {
@@ -577,4 +581,160 @@
   opacity: 0.5;
   text-align: center;
   flex-shrink: 0;
+}
+
+/* Context usage bar */
+#geoai-chat-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--gai-border);
+  background: var(--gai-bg);
+  flex-shrink: 0;
+}
+
+.geoai-ctx-track {
+  flex: 1;
+  max-width: 100px;
+  height: 4px;
+  background: var(--gai-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.geoai-ctx-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s, background 0.3s;
+}
+
+.geoai-ctx-fill.normal { background: var(--gai-primary); }
+.geoai-ctx-fill.warn { background: var(--gai-warn); }
+.geoai-ctx-fill.critical { background: var(--gai-critical); }
+
+.geoai-ctx-nums,
+.geoai-ctx-pct {
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 10px;
+  color: var(--gai-text);
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.geoai-ctx-pct {
+  font-weight: 600;
+}
+
+.geoai-ctx-pct.warn {
+  color: var(--gai-warn);
+  opacity: 1;
+}
+
+.geoai-ctx-pct.critical {
+  color: var(--gai-critical);
+  opacity: 1;
+}
+
+#geoai-chat-context-warn {
+  font-size: 10px;
+  padding: 4px 16px 6px;
+  border-bottom: 1px solid var(--gai-border);
+  background: var(--gai-bg);
+  color: var(--gai-critical);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+/* Sidebar pushes page content left */
+body.geoai-sidebar-open {
+  margin-right: 380px;
+  transition: margin-right 0.25s ease;
+}
+
+/* Expand/collapse sidebar */
+#geoai-chat-expand {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+#geoai-chat-panel.expanded {
+  bottom: 0;
+  right: 0;
+  width: 380px;
+  height: 100vh;
+  height: 100dvh;
+  border-radius: 0;
+  box-shadow: -2px 0 10px rgb(0 0 0 / 8%);
+}
+
+@media (width <= 1024px) {
+  #geoai-chat-panel.expanded {
+    width: 320px;
+  }
+
+  body.geoai-sidebar-open {
+    margin-right: 320px;
+  }
+}
+
+@media (width <= 768px) {
+  #geoai-chat-panel.expanded {
+    width: 300px;
+    box-shadow: -4px 0 16px rgb(0 0 0 / 12%);
+  }
+
+  body.geoai-sidebar-open {
+    margin-right: 0;
+  }
+}
+
+@media (width <= 480px) {
+  #geoai-chat-panel.expanded {
+    width: 100vw;
+  }
+}
+
+/* Source chips */
+.geoai-source-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--gai-border);
+}
+
+.geoai-source-chip {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--gai-border);
+  color: var(--gai-primary);
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* Context full: disable input, highlight New Chat */
+/* stylelint-disable no-descending-specificity -- ctx-full textarea is the
+   chat input, not the feedback comment textarea targeted earlier. */
+
+#geoai-chat-panel.ctx-full textarea {
+  opacity: 0.4;
+  background: var(--gai-border);
+  cursor: not-allowed;
+}
+
+#geoai-chat-panel.ctx-full button[type="submit"] {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* stylelint-enable no-descending-specificity */
+
+#geoai-chat-panel.ctx-full #geoai-chat-new {
+  background: rgb(255 255 255 / 30%);
+  opacity: 1;
+  font-weight: 600;
 }

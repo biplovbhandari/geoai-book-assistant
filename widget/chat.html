@@ -10,10 +10,17 @@
   <header>
     <h2>Geo-AI Book Assistant</h2>
     <span class="geoai-chat-header-actions">
+      <button id="geoai-chat-expand" aria-label="Expand to sidebar">&#x2922;</button>
       <button id="geoai-chat-new" aria-label="New conversation">New chat</button>
       <button id="geoai-chat-close" aria-label="Close chat">&times;</button>
     </span>
   </header>
+  <div id="geoai-chat-context" hidden>
+    <div class="geoai-ctx-track"><div class="geoai-ctx-fill"></div></div>
+    <span class="geoai-ctx-nums"></span>
+    <span class="geoai-ctx-pct"></span>
+  </div>
+  <div id="geoai-chat-context-warn" hidden></div>
   <div id="geoai-chat-suggestions"></div>
   <div id="geoai-chat-messages" role="log"></div>
   <div id="geoai-chat-status" aria-live="polite"></div>

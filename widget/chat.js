@@ -11,8 +11,12 @@
     var visitorId = null;
     var conversationId = null;
     var currentInteractionId = null;
+    var contextWindow = 0;
+    var turnCount = 0;
+    var isExpanded = false;
     try { visitorId = localStorage.getItem(STORAGE_KEY_VISITOR); } catch (_e) {}
     try { conversationId = localStorage.getItem(STORAGE_KEY_CONVERSATION); } catch (_e) {}
+    try { isExpanded = localStorage.getItem('geoai-chat-expanded') === 'true'; } catch (_e) {}
     var SUGGESTED_QUESTIONS = [
         "What is semantic segmentation in the context of remote sensing?",
         "How does the book use deep learning to predict crop yield?",
@@ -29,6 +33,17 @@
     var form = document.getElementById('geoai-chat-form');
     var textarea = form.querySelector('textarea');
     var sendBtn = form.querySelector('button[type="submit"]');
+    var expandBtn = document.getElementById('geoai-chat-expand');
+    var contextEl = document.getElementById('geoai-chat-context');
+    var contextWarnEl = document.getElementById('geoai-chat-context-warn');
+    var contextFill = contextEl.querySelector('.geoai-ctx-fill');
+    var contextNums = contextEl.querySelector('.geoai-ctx-nums');
+    var contextPct = contextEl.querySelector('.geoai-ctx-pct');
+
+    if (isExpanded) {
+        expandBtn.innerHTML = '&#x2923;';
+        expandBtn.setAttribute('aria-label', 'Collapse to panel');
+    }
 
     SUGGESTED_QUESTIONS.forEach(function(q) {
         var btn = document.createElement('button');
@@ -49,11 +64,21 @@
         try { localStorage.removeItem(STORAGE_KEY_LAST_MSG); } catch (_e) {}
         state.messages = [];
         currentCitations = null;
+        contextWindow = 0;
+        turnCount = 0;
+        contextEl.hidden = true;
+        contextWarnEl.hidden = true;
+        panel.classList.remove('ctx-full');
+        textarea.disabled = false;
+        textarea.placeholder = 'Ask about the book...';
+        sendBtn.disabled = false;
         messagesEl.innerHTML = '';
         suggestions.classList.remove('hidden');
         statusEl.textContent = '';
         textarea.focus();
     });
+
+    expandBtn.addEventListener('click', toggleExpanded);
 
     textarea.addEventListener('input', function() {
         textarea.style.height = 'auto';
@@ -94,12 +119,33 @@
         toggle.setAttribute('aria-label', state.isOpen ? 'Close chat assistant' : 'Open chat assistant');
         toggle.setAttribute('aria-expanded', String(state.isOpen));
         if (state.isOpen) {
+            if (isExpanded) {
+                panel.classList.add('expanded');
+                document.body.classList.add('geoai-sidebar-open');
+                toggle.style.display = 'none';
+            }
             textarea.focus();
             if (!hasOpenedChat) {
                 hasOpenedChat = true;
                 if (typeof gtag === 'function') gtag('event', 'chat_open', { event_category: 'chat' });
             }
+        } else {
+            document.body.classList.remove('geoai-sidebar-open');
+            toggle.style.display = '';
         }
+    }
+
+    /**
+     * Toggle between floating panel and full-height sidebar mode.
+     */
+    function toggleExpanded() {
+        isExpanded = !isExpanded;
+        panel.classList.toggle('expanded', isExpanded);
+        document.body.classList.toggle('geoai-sidebar-open', isExpanded);
+        expandBtn.innerHTML = isExpanded ? '&#x2923;' : '&#x2922;';
+        expandBtn.setAttribute('aria-label', isExpanded ? 'Collapse to panel' : 'Expand to sidebar');
+        try { localStorage.setItem('geoai-chat-expanded', String(isExpanded)); } catch (_e) {}
+        toggle.style.display = isExpanded ? 'none' : '';
     }
 
     function autoScroll() {
@@ -367,11 +413,113 @@
         } catch (_e) { return null; }
     }
 
+    /**
+     * Update the context usage bar with current token counts.
+     * @param {number} used - Prompt tokens consumed.
+     * @param {number} total - Total context window size in tokens.
+     */
+    function updateContextBar(used, total) {
+        turnCount += 1;
+        var pct = Math.round(used / total * 100);
+        var usedStr = used >= 1000 ? (used / 1000).toFixed(1) + 'k' : String(used);
+        var totalStr = total >= 1000 ? (total / 1000).toFixed(1) + 'k' : String(total);
+        var level = pct < 80 ? 'normal' : pct < 95 ? 'warn' : 'critical';
+        contextFill.style.width = pct + '%';
+        contextFill.className = 'geoai-ctx-fill ' + level;
+        contextNums.textContent = usedStr + ' / ' + totalStr + '  ·  Turn ' + turnCount;
+        contextPct.textContent = pct + '%';
+        contextPct.className = 'geoai-ctx-pct ' + level;
+        contextEl.hidden = false;
+        if (pct >= 100) {
+            contextWarnEl.textContent = 'Context full. Please start a new chat to continue.';
+            contextWarnEl.hidden = false;
+            textarea.disabled = true;
+            textarea.placeholder = 'Context full — start a new chat';
+            sendBtn.disabled = true;
+            panel.classList.add('ctx-full');
+        } else if (pct >= 95) {
+            contextWarnEl.textContent = 'Context nearly full. Start a new chat for best results.';
+            contextWarnEl.hidden = false;
+            textarea.disabled = false;
+            textarea.placeholder = 'Ask about the book...';
+            sendBtn.disabled = false;
+            panel.classList.remove('ctx-full');
+        } else {
+            contextWarnEl.hidden = true;
+            textarea.disabled = false;
+            textarea.placeholder = 'Ask about the book...';
+            sendBtn.disabled = false;
+            panel.classList.remove('ctx-full');
+        }
+    }
+
+    /**
+     * Derive a short display name from a citation's source path.
+     * @param {Object} citation - Citation with source_path, chapter, section, display_label.
+     * @returns {string} Human-readable short name for the source.
+     */
+    function humanizeSource(citation) {
+        var path = citation.source_path || '';
+        var bookMatch = path.match(/book\/0*(\d+)_([^\/]+)/);
+        if (bookMatch) {
+            var chNum = parseInt(bookMatch[1], 10);
+            var secMatch = path.match(/\/\d+__?([^\/]+)$/);
+            if (secMatch) {
+                return 'Ch.' + chNum + ' - ' + secMatch[1].replace(/_/g, ' ');
+            }
+            return 'Ch.' + chNum + ' - ' + bookMatch[2].replace(/_/g, ' ');
+        }
+        if (path.indexOf('transcript') !== -1) return 'Video transcript';
+        if (citation.chapter) {
+            return citation.chapter + (citation.section ? ' - ' + citation.section : '');
+        }
+        if (citation.display_label) return citation.display_label;
+        var seg = path.split('/').pop() || '';
+        return seg.replace(/_/g, ' ') || 'Source';
+    }
+
+    /**
+     * Render compact source chips below an assistant message bubble.
+     * @param {HTMLElement} bubble - The assistant message bubble element.
+     */
+    function renderSourceChips(bubble) {
+        if (!currentCitations || !currentCitations.length) return;
+        var seen = Object.create(null);
+        var unique = [];
+        for (var i = 0; i < currentCitations.length; i++) {
+            var c = currentCitations[i];
+            if (!c || typeof c !== 'object') continue;
+            var key = c.source_path || ('idx-' + i);
+            if (!seen[key]) {
+                seen[key] = true;
+                unique.push(c);
+            }
+        }
+        if (!unique.length) return;
+        var container = document.createElement('div');
+        container.className = 'geoai-source-chips';
+        var limit = Math.min(unique.length, 4);
+        for (var j = 0; j < limit; j++) {
+            var chip = document.createElement('span');
+            chip.className = 'geoai-source-chip';
+            chip.textContent = humanizeSource(unique[j]);
+            container.appendChild(chip);
+        }
+        if (unique.length > 4) {
+            var more = document.createElement('span');
+            more.className = 'geoai-source-chip';
+            more.textContent = '+' + (unique.length - 4) + ' more';
+            container.appendChild(more);
+        }
+        bubble.appendChild(container);
+    }
+
     function commitDone(question, assistantText, bubble) {
         state.messages.push({ role: 'user', content: question });
         state.messages.push({ role: 'assistant', content: assistantText });
         bubble.innerHTML = renderMarkdown(assistantText);
         linkCitations(bubble);
+        renderSourceChips(bubble);
         renderSources(bubble, currentCitations);
         renderActions(bubble, assistantText, currentCitations, currentInteractionId);
         statusEl.textContent = 'Assistant response complete.';
@@ -512,6 +660,10 @@
                 localStorage.removeItem(STORAGE_KEY_CONVERSATION);
                 state.messages = [];
                 currentCitations = null;
+                contextWindow = 0;
+                turnCount = 0;
+                contextEl.hidden = true;
+                contextWarnEl.hidden = true;
                 messagesEl.innerHTML = '';
             }
         } catch (_e) {}
@@ -569,6 +721,7 @@
                     if (parsed.type === 'meta') {
                         currentCitations = Array.isArray(parsed.citations) ? parsed.citations : [];
                         currentInteractionId = parsed.interaction_id || null;
+                        if (parsed.context_window) contextWindow = parsed.context_window;
                         if (parsed.visitor_id) {
                             visitorId = parsed.visitor_id;
                             try { localStorage.setItem(STORAGE_KEY_VISITOR, visitorId); } catch (_e) {}
@@ -595,6 +748,9 @@
                         state.isLoading = false; setControls(false); restoreSuggestions(); return;
                     } else if (parsed.type === 'done') {
                         receivedDone = true;
+                        if (parsed.prompt_tokens && contextWindow) {
+                            updateContextBar(parsed.prompt_tokens, contextWindow);
+                        }
                         commitDone(question, assistantText, assistantBubble);
                     }
                 }
@@ -612,6 +768,9 @@
                             assistantBubble.innerHTML = renderMarkdown(assistantText);
                         } else if (tp.type === 'done' && !receivedDone) {
                             receivedDone = true;
+                            if (tp.prompt_tokens && contextWindow) {
+                                updateContextBar(tp.prompt_tokens, contextWindow);
+                            }
                             commitDone(question, assistantText, assistantBubble);
                         }
                     } catch (_e) { /* ignore unparseable tail */ }
